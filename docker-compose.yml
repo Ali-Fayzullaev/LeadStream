@@ -1,0 +1,57 @@
+# LeadStream — local stack
+# Runs the Next.js app + a self-hosted Postgres (matches Supabase schema).
+# For production, point NEXT_PUBLIC_SUPABASE_URL at hosted Supabase instead.
+
+services:
+  app:
+    build: .
+    container_name: leadstream-app
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    container_name: leadstream-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: leadstream
+      POSTGRES_USER: leadstream
+      POSTGRES_PASSWORD: leadstream
+    ports:
+      - '5432:5432'
+    volumes:
+      - leadstream_db_data:/var/lib/postgresql/data
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+
+  # Daily database backups -> ./backups/leadstream-YYYY-MM-DD.sql.gz
+  backup:
+    image: postgres:16-alpine
+    container_name: leadstream-backup
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      PGPASSWORD: leadstream
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c '
+        echo "Backup loop started";
+        while true; do
+          ts=$$(date +%Y-%m-%d_%H%M);
+          file="/backups/leadstream-$$ts.sql.gz";
+          echo "[$$ts] backing up to $$file";
+          pg_dump -h db -U leadstream leadstream | gzip > "$$file" || echo "backup failed";
+          # Keep last 14 backups
+          ls -1t /backups/leadstream-*.sql.gz | tail -n +15 | xargs -r rm --;
+          sleep 86400;
+        done
+      '
+
+volumes:
+  leadstream_db_data:
