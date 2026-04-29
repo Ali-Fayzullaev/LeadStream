@@ -1,0 +1,72 @@
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ProfileForm } from '@/components/streamer/profile-form';
+
+export const dynamic = 'force-dynamic';
+
+export default async function StreamerProfilePage() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect('/streamer/login');
+
+  const { data: streamer } = await supabase
+    .from('streamers')
+    .select('display_name, tiktok_username, phone, avatar_url, telegram_chat_id, ref_code, commission_percent, status')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!streamer) redirect('/streamer/login');
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Профиль</h1>
+        <p className="text-sm text-muted-foreground">
+          Можно менять личные данные. Реф-код и комиссия управляются админом.
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Только для чтения</CardTitle>
+          <CardDescription>Установлено админом — для изменения обратитесь в поддержку.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
+          <Field label="Email" value={user.email ?? '—'} />
+          <Field label="Статус" value={streamer.status} />
+          <Field label="Реф-код" value={streamer.ref_code} mono />
+          <Field label="Комиссия" value={`${streamer.commission_percent}%`} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Редактируемые данные</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProfileForm
+            initial={{
+              display_name: streamer.display_name,
+              tiktok_username: streamer.tiktok_username ?? '',
+              phone: streamer.phone ?? '',
+              avatar_url: streamer.avatar_url ?? '',
+              telegram_chat_id: streamer.telegram_chat_id ?? '',
+            }}
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className={mono ? 'font-mono text-sm mt-0.5' : 'text-sm mt-0.5'}>{value}</div>
+    </div>
+  );
+}

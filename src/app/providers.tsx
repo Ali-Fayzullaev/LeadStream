@@ -1,22 +1,21 @@
 'use client';
 
 import { ThemeProvider as NextThemesProvider } from 'next-themes';
-import { SessionProvider } from 'next-auth/react';
 import { Toaster } from 'sonner';
 import type { ReactNode } from 'react';
+import { ServiceWorkerKiller } from '@/components/service-worker-killer';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <SessionProvider>
-      <NextThemesProvider
-        attribute="class"
-        defaultTheme="dark"
-        enableSystem
-        disableTransitionOnChange
-      >
-        {children}
-        <Toaster richColors position="top-right" />
-      </NextThemesProvider>
-    </SessionProvider>
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem
+      disableTransitionOnChange
+    >
+      <ServiceWorkerKiller />
+      {children}
+      <Toaster richColors position="top-right" />
+    </NextThemesProvider>
   );
 }

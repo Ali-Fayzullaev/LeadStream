@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: 'LeadStream — Streamer-driven order tracking',
   description:
     'Track orders that come from your TikTok streamers. Real-time stats, per-streamer attribution, and instant Telegram notifications.',
-  metadataBase: new URL(process.env.NEXTAUTH_URL ?? 'http://localhost:3000'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
 };
 
 export const viewport: Viewport = {
@@ -25,6 +25,19 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/*
+          Defensive: this app does NOT register any Service Worker.
+          If a stale SW is left over from another dev project on the same origin
+          (localhost:3000), it intercepts /_next/* chunks and breaks the app.
+          This inline script runs BEFORE any webpack chunk loads.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){if(!rs.length)return;Promise.all(rs.map(function(r){return r.unregister()})).then(function(){if(typeof caches!=='undefined'){caches.keys().then(function(ks){return Promise.all(ks.map(function(k){return caches.delete(k)}))}).finally(function(){location.reload()})}else{location.reload()}})})}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} font-sans`}>
         <Providers>{children}</Providers>
       </body>

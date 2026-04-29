@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { LogOut, LayoutDashboard, Users, ShoppingBag, Sparkles } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { SignOutButton } from './sign-out-button';
+import { signOutAction } from '@/app/(auth)/actions';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = createClient();
@@ -12,51 +12,37 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   } = await supabase.auth.getUser();
   if (!user) redirect('/admin/login');
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, full_name, email')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (!profile || profile.role !== 'admin') redirect('/admin/login');
+
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
-        <div className="container flex h-14 items-center justify-between">
-          <Link href="/admin" className="flex items-center gap-2 font-semibold">
-            <Sparkles className="size-4 text-primary" /> LeadStream
-          </Link>
-          <nav className="flex items-center gap-1 text-sm">
-            <NavLink href="/admin" icon={LayoutDashboard}>
-              Dashboard
-            </NavLink>
-            <NavLink href="/admin/streamers" icon={Users}>
-              Streamers
-            </NavLink>
-            <NavLink href="/admin/orders" icon={ShoppingBag}>
-              Orders
-            </NavLink>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <header className="border-b">
+        <div className="container flex items-center justify-between h-14">
+          <div className="flex items-center gap-6">
+            <Link href="/admin" className="font-semibold tracking-tight">
+              LeadStream <span className="text-primary text-xs ml-1 align-top">admin</span>
+            </Link>
+            <nav className="hidden sm:flex items-center gap-4 text-sm text-muted-foreground">
+              <Link href="/admin" className="hover:text-foreground">Дашборд</Link>
+              <Link href="/admin/streamers" className="hover:text-foreground">Стримеры</Link>
+              <Link href="/admin/orders" className="hover:text-foreground">Заказы</Link>
+            </nav>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-xs text-muted-foreground">{profile.full_name ?? profile.email}</span>
             <ThemeToggle />
-            <SignOutButton />
-          </nav>
+            <form action={signOutAction}>
+              <Button type="submit" variant="ghost" size="sm">Выйти</Button>
+            </form>
+          </div>
         </div>
       </header>
-      <main className="container py-6">{children}</main>
+      <main className="flex-1 container py-8">{children}</main>
     </div>
   );
 }
-
-function NavLink({
-  href,
-  icon: Icon,
-  children,
-}: {
-  href: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="hidden items-center gap-1.5 rounded-md px-3 py-2 hover:bg-accent sm:inline-flex"
-    >
-      <Icon className="size-4" /> {children}
-    </Link>
-  );
-}
-
-// Re-export for sibling files. Imported above already.
-export { LogOut };

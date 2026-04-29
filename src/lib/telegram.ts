@@ -1,69 +1,58 @@
-/**
- * Telegram notification helper.
- *
- * Posts a message to the configured chat. Silently no-ops if env vars are missing,
- * so the order flow keeps working even without Telegram configured.
- */
-const TG_API = 'https://api.telegram.org';
+import 'server-only';
 
-export interface TelegramMessage {
-  text: string;
-  parseMode?: 'HTML' | 'MarkdownV2';
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 }
 
-export async function sendTelegramMessage({ text, parseMode = 'HTML' }: TelegramMessage) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-
-  if (!token || !chatId) return { ok: false, skipped: true as const };
-
+/**
+ * Fire-and-forget Telegram message. Silently no-ops if env vars are missing.
+ */
+export async function sendTelegramMessage(html: string, chatId?: string): Promise<void> {
+  const target = chatId ?? CHAT_ID;
+  if (!TOKEN || !target) return;
   try {
-    const res = await fetch(`${TG_API}/bot${token}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: parseMode,
+        chat_id: target,
+        text: html,
+        parse_mode: 'HTML',
         disable_web_page_preview: true,
       }),
-      // Avoid blocking the request for too long if Telegram is slow.
-      signal: AbortSignal.timeout(5_000),
     });
-    return { ok: res.ok };
-  } catch (err) {
-    console.error('[telegram] send failed:', err);
-    return { ok: false };
+  } catch {
+    // swallow — notifications are best-effort
   }
 }
 
-/** Escape user-controlled content for HTML parse mode. */
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-export function formatNewOrderMessage(order: {
+export interface OrderNotificationPayload {
   id: string;
   customerName: string;
   customerPhone: string;
   productName: string;
   quantity: number;
-  amount: number | string;
-  streamer?: { name: string; refCode: string } | null;
-}): string {
-  const stream = order.streamer
-    ? `${escapeHtml(order.streamer.name)} <code>(${escapeHtml(order.streamer.refCode)})</code>`
-    : '<i>direct</i>';
-  return [
+  amount: number;
+  streamerName?: string | null;
+  refCode?: string | null;
+}
+
+export function buildOrderNotificationHtml(o: OrderNotificationPayload): string {
+  const lines = [
     '🛒 <b>New order</b>',
-    `👤 ${escapeHtml(order.customerName)}`,
-    `📞 <code>${escapeHtml(order.customerPhone)}</code>`,
-    `📦 ${escapeHtml(order.productName)} × ${order.quantity}`,
-    `💵 ${order.amount}`,
-    `🎬 ${stream}`,
-    `🆔 <code>${order.id}</code>`,
-  ].join('\n');
+    `👤 ${escapeHtml(o.customerName)}`,
+    `📞 ${escapeHtml(o.customerPhone)}`,
+    `📦 ${escapeHtml(o.productName)} × ${o.quantity}`,
+    `💵 ${o.amount.toFixed(2)}`,
+  ];
+  if (o.streamerName || o.refCode) {
+    lines.push(`🎬 ${escapeHtml(o.streamerName ?? '—')} (${escapeHtml(o.refCode ?? '—')})`);
+  } else {
+    lines.push('🎬 <i>direct visit (no ref)</i>');
+  }
+  lines.push(`🆔 <code>${escapeHtml(o.id)}</code>`);
+  return lines.join('\n');
 }
