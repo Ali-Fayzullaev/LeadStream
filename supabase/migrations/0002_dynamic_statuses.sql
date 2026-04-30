@@ -61,6 +61,9 @@ on conflict (key) do nothing;
 -- 5. Foreign key: orders.status → order_statuses.key (RESTRICT prevents
 --    deleting a status that is still in use).
 alter table public.orders
+  drop constraint if exists orders_status_fkey;
+
+alter table public.orders
   add constraint orders_status_fkey
   foreign key (status) references public.order_statuses(key) on update cascade on delete restrict;
 

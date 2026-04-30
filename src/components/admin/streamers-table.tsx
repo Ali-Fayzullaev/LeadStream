@@ -3,10 +3,11 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Check, Copy, Loader2, Pencil, X } from 'lucide-react';
+import { Check, Copy, Loader2, Pencil, Users, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
 import { adminUpdateStreamerAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
@@ -48,7 +49,11 @@ export function StreamersTable({ rows, appUrl }: { rows: StreamerRow[]; appUrl: 
         </tbody>
       </table>
       {rows.length === 0 && (
-        <p className="px-6 py-8 text-sm text-muted-foreground text-center">No streamers yet.</p>
+        <EmptyState
+          icon={Users}
+          title="Стримеров пока нет"
+          description="Новые стримеры появятся здесь после регистрации и одобрения."
+        />
       )}
     </div>
   );

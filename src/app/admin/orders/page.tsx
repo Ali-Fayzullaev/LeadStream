@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/page-header';
 import { OrdersTable, type OrderRow } from '@/components/admin/orders-table';
 import { getOrderStatuses } from '@/lib/statuses';
 
@@ -105,18 +106,18 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Заказы</h1>
-          <p className="text-sm text-muted-foreground">{total} заказов найдено.</p>
-        </div>
-        <Button asChild>
-          <a href={exportHref}>
-            <Download className="size-4" />
-            Export XLSX
-          </a>
-        </Button>
-      </div>
+      <PageHeader
+        title="Заказы"
+        description={`${total} заказов найдено.`}
+        actions={
+          <Button asChild>
+            <a href={exportHref}>
+              <Download className="size-4" />
+              Export XLSX
+            </a>
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

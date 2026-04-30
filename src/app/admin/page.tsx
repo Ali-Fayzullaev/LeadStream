@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrdersChart } from '@/components/streamer/orders-chart';
 import { UserAvatar } from '@/components/user-avatar';
+import { PageHeader } from '@/components/page-header';
 import { formatNumber } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -64,10 +65,10 @@ export default async function AdminHomePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Дашборд админа</h1>
-        <p className="text-sm text-muted-foreground">Все стримеры, все заказы, последние {DAYS} дней.</p>
-      </div>
+      <PageHeader
+        title="Дашборд админа"
+        description={`Все стримеры, все заказы, последние ${DAYS} дней.`}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         <Kpi icon={<Users className="size-4" />} label="Стримеры"

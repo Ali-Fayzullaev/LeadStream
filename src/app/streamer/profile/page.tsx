@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProfileForm } from '@/components/streamer/profile-form';
+import { PageHeader } from '@/components/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,12 +23,10 @@ export default async function StreamerProfilePage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Профиль</h1>
-        <p className="text-sm text-muted-foreground">
-          Можно менять личные данные. Реф-код и комиссия управляются админом.
-        </p>
-      </div>
+      <PageHeader
+        title="Профиль"
+        description="Можно менять личные данные. Реф-код и комиссия управляются админом."
+      />
 
       <Card>
         <CardHeader>

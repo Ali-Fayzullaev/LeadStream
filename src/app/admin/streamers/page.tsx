@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CreateStreamerForm } from '@/components/admin/create-streamer-form';
 import { StreamersTable, type StreamerRow } from '@/components/admin/streamers-table';
+import { PageHeader } from '@/components/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,15 +44,11 @@ export default async function AdminStreamersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Стримеры</h1>
-          <p className="text-sm text-muted-foreground">
-            {rows.length} всего{pending > 0 && ` · ${pending} ожидают проверки`}
-          </p>
-        </div>
-        <CreateStreamerForm />
-      </div>
+      <PageHeader
+        title="Стримеры"
+        description={`${rows.length} всего${pending > 0 ? ` · ${pending} ожидают проверки` : ''}`}
+        actions={<CreateStreamerForm />}
+      />
 
       <Card>
         <CardHeader>

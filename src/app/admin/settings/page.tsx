@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
-import { Settings, User, Tag } from 'lucide-react';
+import { User, Tag } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PageHeader } from '@/components/page-header';
 import { ProfileSection } from './profile-section';
 import { PasswordSection } from './password-section';
 import { StatusesSection } from './statuses-section';
@@ -37,15 +38,10 @@ export default async function AdminSettingsPage({ searchParams }: { searchParams
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div className="flex items-center gap-3">
-        <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center">
-          <Settings className="size-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Настройки</h1>
-          <p className="text-sm text-muted-foreground">Профиль администратора и конфигурация системы</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Настройки"
+        description="Профиль администратора и конфигурация системы"
+      />
 
       {/* Tabs */}
       <div className="border-b flex gap-1">

@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Package } from 'lucide-react';
+import { ArrowRight, Package, Sparkles } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefLinkCard } from '@/components/streamer/ref-link-card';
 import { OrdersChart } from '@/components/streamer/orders-chart';
 import { StatusBadge } from '@/components/status-badge';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader } from '@/components/page-header';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatNumber } from '@/lib/utils';
 
@@ -80,12 +82,10 @@ export default async function StreamerDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Добро пожаловать, {streamer.display_name}</h1>
-        <p className="text-sm text-muted-foreground">
-          Ставка комиссии: <b className="text-foreground">{streamer.commission_percent}%</b>
-        </p>
-      </div>
+      <PageHeader
+        title={`Добро пожаловать, ${streamer.display_name}`}
+        description={<>Ставка комиссии: <b className="text-foreground">{streamer.commission_percent}%</b></>}
+      />
 
       <div className="grid gap-4 md:grid-cols-1 max-w-xs">
         <Kpi
@@ -149,9 +149,11 @@ export default async function StreamerDashboardPage() {
               </table>
             </div>
           ) : (
-            <p className="px-6 py-8 text-sm text-muted-foreground text-center">
-              Заказов ещё нет — поделитесь ссылкой!
-            </p>
+            <EmptyState
+              icon={Sparkles}
+              title="Заказов ещё нет"
+              description="Поделитесь реферальной ссылкой — первый заказ не заставит себя ждать."
+            />
           )}
         </CardContent>
       </Card>

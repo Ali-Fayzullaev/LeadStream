@@ -1,7 +1,10 @@
 import { redirect } from 'next/navigation';
+import { PackageSearch } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/status-badge';
+import { EmptyState } from '@/components/empty-state';
+import { PageHeader } from '@/components/page-header';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
 
@@ -42,12 +45,10 @@ export default async function StreamerOrdersPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Заказы</h1>
-        <p className="text-sm text-muted-foreground">
-          {total} {total === 1 ? 'заказ' : total >= 2 && total <= 4 ? 'заказа' : 'заказов'} привязано к вам. Номер телефона скрыт.
-        </p>
-      </div>
+      <PageHeader
+        title="Заказы"
+        description={`${total} ${total === 1 ? 'заказ' : total >= 2 && total <= 4 ? 'заказа' : 'заказов'} привязано к вам. Номер телефона скрыт.`}
+      />
 
       <Card>
         <CardHeader>
@@ -95,9 +96,11 @@ export default async function StreamerOrdersPage({
               </table>
             </div>
           ) : (
-            <p className="px-6 py-8 text-sm text-muted-foreground text-center">
-              Заказов пока нет.
-            </p>
+            <EmptyState
+              icon={PackageSearch}
+              title="Заказов пока нет"
+              description="Поделитесь вашей реферальной ссылкой — первые заказы появятся здесь."
+            />
           )}
         </CardContent>
       </Card>

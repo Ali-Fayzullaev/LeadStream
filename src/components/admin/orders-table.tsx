@@ -3,9 +3,11 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Trash2 } from 'lucide-react';
+import { Loader2, Trash2, PackageSearch } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
 import { StatusBadge } from '@/components/status-badge';
 import { adminUpdateOrderStatusAction, adminDeleteOrderAction } from '@/app/admin/actions';
@@ -55,7 +57,11 @@ export function OrdersTable({ rows, statuses }: { rows: OrderRow[]; statuses: St
         </tbody>
       </table>
       {rows.length === 0 && (
-        <p className="px-6 py-8 text-sm text-muted-foreground text-center">Заказов нет.</p>
+        <EmptyState
+          icon={PackageSearch}
+          title="Заказов пока нет"
+          description="Когда появятся новые заказы — они отобразятся здесь. Попробуйте сбросить фильтры."
+        />
       )}
     </div>
   );
@@ -65,6 +71,7 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
   const router = useRouter();
   const [pending, start] = useTransition();
   const [status, setStatus] = useState<string>(row.status);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const change = (next: string) => {
     setStatus(next);
@@ -81,7 +88,6 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
   };
 
   const remove = () => {
-    if (!confirm('Удалить этот заказ? Действие нельзя отменить.')) return;
     start(async () => {
       const res = await adminDeleteOrderAction(row.id);
       if (!res.ok) {
@@ -89,6 +95,7 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
         return;
       }
       toast.success('Заказ удалён');
+      setConfirmOpen(false);
       router.refresh();
     });
   };
@@ -143,9 +150,24 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
         </div>
       </td>
       <td className="px-4 py-2 text-right">
-        <Button size="icon" variant="ghost" onClick={remove} disabled={pending} aria-label="Delete order">
+        <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
         </Button>
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Удалить заказ?"
+          description={
+            <>
+              Заказ <b className="text-foreground">{row.customer_name}</b> на сумму{' '}
+              <b className="text-foreground">{formatCurrency(Number(row.amount))}</b> будет удалён без возможности восстановления.
+            </>
+          }
+          confirmLabel="Удалить"
+          variant="destructive"
+          pending={pending}
+          onConfirm={remove}
+          onClose={() => setConfirmOpen(false)}
+        />
       </td>
     </tr>
   );
