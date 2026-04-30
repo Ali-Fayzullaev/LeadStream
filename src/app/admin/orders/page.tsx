@@ -6,20 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrdersTable, type OrderRow } from '@/components/admin/orders-table';
+import { getOrderStatuses } from '@/lib/statuses';
 
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 50;
-const STATUSES = ['', 'new', 'confirmed', 'shipped', 'completed', 'cancelled'] as const;
-
-const STATUS_RU: Record<string, string> = {
-  '': 'Любой статус',
-  new: 'Новый',
-  confirmed: 'Подтверждён',
-  shipped: 'Отправлен',
-  completed: 'Выполнен',
-  cancelled: 'Отменён',
-};
 
 interface SP {
   page?: string;
@@ -59,12 +50,13 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   if (searchParams?.to) query = query.lte('created_at', `${searchParams.to}T23:59:59`);
 
   // Streamers list — used for both the filter dropdown and name lookup.
-  const [{ data: rawRows, count }, { data: streamers }] = await Promise.all([
+  const [{ data: rawRows, count }, { data: streamers }, statuses] = await Promise.all([
     query,
     admin
       .from('streamers')
       .select('id, display_name, ref_code, avatar_url')
       .order('display_name', { ascending: true }),
+    getOrderStatuses(),
   ]);
 
   const streamerNameMap = new Map(
@@ -134,8 +126,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
           <form method="get" className="grid gap-3 md:grid-cols-5">
             <select name="status" defaultValue={searchParams?.status ?? ''}
                     className="h-10 rounded-md border border-input bg-background px-3 text-sm">
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>{STATUS_RU[s] ?? s}</option>
+              <option value="">Любой статус</option>
+              {statuses.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
               ))}
             </select>
             <select name="streamer" defaultValue={searchParams?.streamer ?? ''}
@@ -158,7 +151,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         </CardContent>
       </Card>
 
-      <OrdersTable rows={rows} />
+      <OrdersTable rows={rows} statuses={statuses} />
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">

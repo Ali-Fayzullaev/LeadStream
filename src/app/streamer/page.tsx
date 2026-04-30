@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefLinkCard } from '@/components/streamer/ref-link-card';
 import { OrdersChart } from '@/components/streamer/orders-chart';
+import { StatusBadge } from '@/components/status-badge';
+import { getOrderStatuses } from '@/lib/statuses';
 import { formatNumber } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -64,11 +66,15 @@ export default async function StreamerDashboardPage() {
   }
 
   // Latest 5 orders (masked).
-  const { data: recent } = await supabase
-    .from('streamer_orders')
-    .select('id, customer_name, customer_phone_masked, product_name, amount, status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(5);
+  const [{ data: recent }, statuses] = await Promise.all([
+    supabase
+      .from('streamer_orders')
+      .select('id, customer_name, customer_phone_masked, product_name, amount, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5),
+    getOrderStatuses(),
+  ]);
+  const statusMap = new Map(statuses.map((s) => [s.key, s]));
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
@@ -122,14 +128,23 @@ export default async function StreamerDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recent.map((r) => (
-                    <tr key={r.id} className="border-t">
-                      <td className="px-4 py-2">{r.customer_name}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{r.customer_phone_masked}</td>
-                      <td className="px-4 py-2"><StatusBadge status={r.status} /></td>
-                      <td className="px-4 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</td>
-                    </tr>
-                  ))}
+                  {recent.map((r) => {
+                    const s = statusMap.get(r.status);
+                    return (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-4 py-2">{r.customer_name}</td>
+                        <td className="px-4 py-2 font-mono text-xs">{r.customer_phone_masked}</td>
+                        <td className="px-4 py-2">
+                          {s ? (
+                            <StatusBadge label={s.label} color={s.color} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{r.status}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">{new Date(r.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -154,28 +169,5 @@ function Kpi({ icon, label, value }: { icon: React.ReactNode; label: string; val
         <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
       </CardContent>
     </Card>
-  );
-}
-
-const STATUS_RU: Record<string, string> = {
-  new: 'Новый',
-  confirmed: 'Подтверждён',
-  shipped: 'Отправлен',
-  completed: 'Выполнен',
-  cancelled: 'Отменён',
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    new: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
-    confirmed: 'bg-amber-500/10 text-amber-500 border-amber-500/30',
-    shipped: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/30',
-    completed: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30',
-    cancelled: 'bg-red-500/10 text-red-500 border-red-500/30',
-  };
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${map[status] ?? ''}`}>
-      {STATUS_RU[status] ?? status}
-    </span>
   );
 }

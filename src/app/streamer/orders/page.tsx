@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatusBadge } from '@/components/status-badge';
+import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -22,13 +24,18 @@ export default async function StreamerOrdersPage({
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  const { data: rows, count } = await supabase
-    .from('streamer_orders')
-    .select('id, customer_name, customer_phone_masked, product_name, quantity, amount, status, created_at', {
-      count: 'exact',
-    })
-    .order('created_at', { ascending: false })
-    .range(from, to);
+  const [{ data: rows, count }, statuses] = await Promise.all([
+    supabase
+      .from('streamer_orders')
+      .select('id, customer_name, customer_phone_masked, product_name, quantity, amount, status, created_at', {
+        count: 'exact',
+      })
+      .order('created_at', { ascending: false })
+      .range(from, to),
+    getOrderStatuses(),
+  ]);
+
+  const statusMap = new Map(statuses.map((s) => [s.key, s]));
 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -62,19 +69,28 @@ export default async function StreamerOrdersPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => (
-                    <tr key={r.id} className="border-t">
-                      <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
-                        {new Date(r.created_at).toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2">{r.customer_name}</td>
-                      <td className="px-4 py-2 font-mono text-xs">{r.customer_phone_masked}</td>
-                      <td className="px-4 py-2">{r.product_name}</td>
-                      <td className="px-4 py-2 text-right">{r.quantity}</td>
-                      <td className="px-4 py-2 text-right">{formatCurrency(Number(r.amount))}</td>
-                      <td className="px-4 py-2"><StatusBadge status={r.status} /></td>
-                    </tr>
-                  ))}
+                  {rows.map((r) => {
+                    const s = statusMap.get(r.status);
+                    return (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
+                          {new Date(r.created_at).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-2">{r.customer_name}</td>
+                        <td className="px-4 py-2 font-mono text-xs">{r.customer_phone_masked}</td>
+                        <td className="px-4 py-2">{r.product_name}</td>
+                        <td className="px-4 py-2 text-right">{r.quantity}</td>
+                        <td className="px-4 py-2 text-right">{formatCurrency(Number(r.amount))}</td>
+                        <td className="px-4 py-2">
+                          {s ? (
+                            <StatusBadge label={s.label} color={s.color} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{r.status}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -100,28 +116,5 @@ export default async function StreamerOrdersPage({
         </div>
       )}
     </div>
-  );
-}
-
-const STATUS_RU: Record<string, string> = {
-  new: 'Новый',
-  confirmed: 'Подтверждён',
-  shipped: 'Отправлен',
-  completed: 'Выполнен',
-  cancelled: 'Отменён',
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    new: 'bg-blue-500/10 text-blue-500 border-blue-500/30',
-    confirmed: 'bg-amber-500/10 text-amber-500 border-amber-500/30',
-    shipped: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/30',
-    completed: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30',
-    cancelled: 'bg-red-500/10 text-red-500 border-red-500/30',
-  };
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${map[status] ?? ''}`}>
-      {STATUS_RU[status] ?? status}
-    </span>
   );
 }

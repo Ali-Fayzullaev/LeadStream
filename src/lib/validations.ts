@@ -58,3 +58,30 @@ export const adminCreateStreamerSchema = z.object({
   commissionPercent: z.coerce.number().min(0).max(100).default(10),
 });
 export type AdminCreateStreamerInput = z.infer<typeof adminCreateStreamerSchema>;
+
+// ---- Admin profile / settings ----
+
+const hexColorRegex = /^#([0-9a-fA-F]{6})$/;
+const statusKeyRegex = /^[a-z0-9_]{2,32}$/;
+
+export const adminUpdateProfileSchema = z.object({
+  full_name: z.string().trim().min(2).max(120),
+});
+export type AdminUpdateProfileInput = z.infer<typeof adminUpdateProfileSchema>;
+
+export const adminChangePasswordSchema = z.object({
+  current_password: z.string().min(1),
+  new_password: z.string().min(8).max(72),
+});
+export type AdminChangePasswordInput = z.infer<typeof adminChangePasswordSchema>;
+
+export const orderStatusSchema = z.object({
+  key: z.string().trim().toLowerCase().regex(statusKeyRegex, 'Только латиница, цифры, _ (2–32)'),
+  label: z.string().trim().min(1).max(60),
+  color: z.string().trim().regex(hexColorRegex, 'Цвет должен быть в формате #rrggbb'),
+  sort_order: z.coerce.number().int().min(0).max(9999).default(0),
+});
+export type OrderStatusInput = z.infer<typeof orderStatusSchema>;
+
+export const orderStatusUpdateSchema = orderStatusSchema.partial().omit({ key: true });
+export type OrderStatusUpdateInput = z.infer<typeof orderStatusUpdateSchema>;
