@@ -43,9 +43,9 @@ export default function StreamerLoginPage() {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Вход для стримера</CardTitle>
+    <Card className="shadow-xl ring-1 ring-border/60">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl">Вход для стримера</CardTitle>
         <CardDescription>Войдите, чтобы посмотреть статистику и заказы.</CardDescription>
       </CardHeader>
       <CardContent>

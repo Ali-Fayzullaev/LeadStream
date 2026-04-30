@@ -8,6 +8,7 @@ import {
   Users,
   ShoppingCart,
   Settings,
+  GraduationCap,
   Menu,
   X,
   LogOut,
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
   { href: '/admin', label: 'Дашборд', icon: LayoutDashboard, exact: true },
   { href: '/admin/streamers', label: 'Стримеры', icon: Users },
   { href: '/admin/orders', label: 'Заказы', icon: ShoppingCart },
+  { href: '/admin/learn', label: 'Обучение', icon: GraduationCap },
   { href: '/admin/settings', label: 'Настройки', icon: Settings },
 ];
 

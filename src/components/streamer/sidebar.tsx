@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   User,
+  GraduationCap,
   Menu,
   X,
   LogOut,
@@ -31,6 +32,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/streamer', label: 'Дашборд', icon: LayoutDashboard, exact: true },
   { href: '/streamer/orders', label: 'Заказы', icon: ShoppingCart },
+  { href: '/streamer/learn', label: 'Обучение', icon: GraduationCap },
   { href: '/streamer/profile', label: 'Профиль', icon: User },
 ];
 

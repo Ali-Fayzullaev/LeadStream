@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { toast } from 'sonner';
-import { Upload, Trash2, ImageIcon } from 'lucide-react';
+import { Upload, Trash2, ImageIcon, Send, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,11 +14,14 @@ const MAX_BYTES = 2 * 1024 * 1024;
 export function SiteSection({
   siteName,
   logoUrl,
+  adminTelegramChatId,
 }: {
   siteName: string;
   logoUrl: string | null;
+  adminTelegramChatId: string | null;
 }) {
   const [name, setName] = useState(siteName);
+  const [tgChatId, setTgChatId] = useState(adminTelegramChatId ?? '');
   const [preview, setPreview] = useState<string | null>(logoUrl);
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [removed, setRemoved] = useState(false);
@@ -49,6 +52,7 @@ export function SiteSection({
     e.preventDefault();
     const fd = new FormData();
     fd.set('site_name', name);
+    fd.set('admin_telegram_chat_id', tgChatId.trim());
     if (pickedFile) fd.set('logo', pickedFile);
     if (removed && !pickedFile) fd.set('remove_logo', '1');
 
@@ -66,6 +70,7 @@ export function SiteSection({
 
   const dirty =
     name.trim() !== siteName.trim() ||
+    tgChatId.trim() !== (adminTelegramChatId ?? '').trim() ||
     pickedFile !== null ||
     (removed && logoUrl !== null);
 
@@ -135,6 +140,45 @@ export function SiteSection({
         <p className="text-xs text-muted-foreground">
           PNG, JPG, SVG или WEBP, до 2 MB. Рекомендованный размер — 256×256.
         </p>
+      </div>
+
+      <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+        <Label htmlFor="admin_telegram_chat_id" className="flex items-center gap-2">
+          <Send className="size-4 text-sky-500" />
+          Telegram уведомления админа
+        </Label>
+        <Input
+          id="admin_telegram_chat_id"
+          name="admin_telegram_chat_id"
+          value={tgChatId}
+          onChange={(e) => setTgChatId(e.target.value)}
+          placeholder="123456789"
+          inputMode="numeric"
+          pattern="-?\d*"
+          maxLength={32}
+        />
+        <div className="text-xs text-muted-foreground space-y-1">
+          <p>Куда бот будет присылать уведомления о новых заказах. Оставьте пустым, чтобы отключить.</p>
+          <p className="font-medium text-foreground">Как узнать свой chat ID:</p>
+          <ol className="list-decimal pl-5 space-y-0.5">
+            <li>
+              Откройте бота{' '}
+              <a
+                href="https://t.me/userinfobot"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 text-sky-600 hover:underline dark:text-sky-400"
+              >
+                @userinfobot <ExternalLink className="size-3" />
+              </a>{' '}
+              и нажмите Start — он пришлёт ваш ID.
+            </li>
+            <li>
+              Затем напишите вашему боту LeadStream любое сообщение (иначе бот не сможет вам писать).
+            </li>
+            <li>Для группы добавьте бота админом и используйте ID группы (со знаком минус).</li>
+          </ol>
+        </div>
       </div>
 
       <div className="flex items-center gap-2">

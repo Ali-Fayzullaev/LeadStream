@@ -27,6 +27,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
+  // Opt-out flag from forms that should never credit a streamer (e.g. root landing).
+  const noAttribution =
+    typeof body === 'object' && body !== null && (body as { _no_attribution?: unknown })._no_attribution === true;
+
   const parsed = createOrderSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -36,9 +40,11 @@ export async function POST(request: NextRequest) {
   }
   const data = parsed.data;
 
-  // Resolve ref: body.ref takes priority, otherwise the cookie.
+  // Resolve ref: body.ref takes priority, otherwise the cookie. Skip entirely if no-attribution.
   const cookieRef = cookies().get(REF_COOKIE)?.value ?? null;
-  const ref = (data.ref ?? cookieRef ?? '').trim().toLowerCase() || null;
+  const ref = noAttribution
+    ? null
+    : (data.ref ?? cookieRef ?? '').trim().toLowerCase() || null;
 
   const admin = createAdminClient();
 

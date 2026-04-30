@@ -43,13 +43,13 @@ export default function AdminLoginPage() {
   });
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="shadow-xl ring-1 ring-border/60">
+      <CardHeader className="space-y-1">
         <div className="flex items-center gap-2 text-primary">
           <ShieldCheck className="size-5" />
           <span className="text-xs uppercase tracking-wider font-medium">Администратор</span>
         </div>
-        <CardTitle>Вход для админа</CardTitle>
+        <CardTitle className="text-2xl">Вход для админа</CardTitle>
         <CardDescription>Только для владельцев и менеджеров.</CardDescription>
       </CardHeader>
       <CardContent>

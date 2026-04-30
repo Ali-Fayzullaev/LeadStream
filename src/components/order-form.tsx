@@ -17,9 +17,17 @@ interface OrderFormProps {
   streamerName: string | null;
   defaultProductName?: string;
   defaultAmount?: number;
+  /** When true, the API will ignore body.ref and the cookie — order won't be attributed. */
+  disableAttribution?: boolean;
 }
 
-export function OrderForm({ refCode, streamerName, defaultProductName, defaultAmount }: OrderFormProps) {
+export function OrderForm({
+  refCode,
+  streamerName,
+  defaultProductName,
+  defaultAmount,
+  disableAttribution = false,
+}: OrderFormProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -33,17 +41,20 @@ export function OrderForm({ refCode, streamerName, defaultProductName, defaultAm
       quantity: 1,
       amount: defaultAmount ?? 0,
       notes: '',
-      ref: refCode ?? undefined,
+      ref: disableAttribution ? undefined : (refCode ?? undefined),
     },
   });
 
   const onSubmit = form.handleSubmit((values) => {
     setError(null);
     start(async () => {
+      const payload = disableAttribution
+        ? { ...values, ref: null, _no_attribution: true }
+        : values;
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {

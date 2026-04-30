@@ -93,7 +93,11 @@ export default async function AdminSettingsPage({ searchParams }: { searchParams
             <CardDescription>Имя сайта и логотип — используются везде (сайдбар, лендинг, вкладка браузера).</CardDescription>
           </CardHeader>
           <CardContent>
-            <SiteSection siteName={settings.site_name} logoUrl={settings.logo_url} />
+            <SiteSection
+              siteName={settings.site_name}
+              logoUrl={settings.logo_url}
+              adminTelegramChatId={settings.admin_telegram_chat_id}
+            />
           </CardContent>
         </Card>
       )}

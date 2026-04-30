@@ -49,11 +49,6 @@ export function ProfileForm({ initial }: ProfileFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="tiktok_username">TikTok @</Label>
-        <Input id="tiktok_username" placeholder="alex_streams" {...form.register('tiktok_username')} />
-      </div>
-
-      <div className="space-y-2">
         <Label htmlFor="phone">Телефон</Label>
         <Input id="phone" type="tel" placeholder="+7 999 010 0100" {...form.register('phone')} />
         {form.formState.errors.phone && (

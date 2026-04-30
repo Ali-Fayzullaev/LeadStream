@@ -3,10 +3,10 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus, X, Music2, ExternalLink } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,27 +15,53 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { registerStreamerSchema, type RegisterStreamerInput } from '@/lib/validations';
 import { registerStreamerAction } from '@/app/(auth)/actions';
 
+interface RegisterFormShape {
+  fullName: string;
+  tiktokAccounts: { value: string }[];
+  email: string;
+  password: string;
+}
+
 export default function StreamerRegisterPage() {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  const form = useForm<RegisterStreamerInput>({
-    resolver: zodResolver(registerStreamerSchema),
+  const form = useForm<RegisterFormShape>({
     defaultValues: {
       fullName: '',
-      tiktokUsername: '',
+      tiktokAccounts: [{ value: '' }],
       email: '',
       password: '',
-      desiredRefCode: '',
     },
+  });
+
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: 'tiktokAccounts',
   });
 
   const onSubmit = form.handleSubmit((values) => {
     setError(null);
+    // Build the validated input shape from form.
+    const candidate: RegisterStreamerInput = {
+      fullName: values.fullName,
+      tiktokUsernames: values.tiktokAccounts
+        .map((a) => a.value.trim())
+        .filter((v) => v.length > 0),
+      email: values.email,
+      password: values.password,
+    };
+    const parsed = registerStreamerSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const msg = parsed.error.errors[0]?.message ?? 'Заполните форму корректно';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
     start(async () => {
-      const res = await registerStreamerAction(values);
+      const res = await registerStreamerAction(parsed.data);
       if (!res.ok) {
         setError(res.error);
         toast.error(res.error);
@@ -65,72 +91,137 @@ export default function StreamerRegisterPage() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Создать аккаунт стримера</CardTitle>
-        <CardDescription>Получите уникальную реферальную ссылку и зарабатывайте с каждого заказа.</CardDescription>
+    <Card className="shadow-xl ring-1 ring-border/60">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-2xl">Создать аккаунт стримера</CardTitle>
+        <CardDescription>
+          Получите уникальную реферальную ссылку и зарабатывайте с каждого заказа.
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} method="post" action="#" className="space-y-4">
+        <form onSubmit={onSubmit} method="post" action="#" className="space-y-5">
           <div className="space-y-2">
             <Label htmlFor="fullName">Полное имя</Label>
-            <Input id="fullName" autoComplete="name" {...form.register('fullName')} />
-            {form.formState.errors.fullName && (
-              <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
-            )}
+            <Input
+              id="fullName"
+              autoComplete="name"
+              {...form.register('fullName', { required: true, minLength: 2 })}
+            />
           </div>
 
+          {/* TikTok accounts */}
           <div className="space-y-2">
-            <Label htmlFor="tiktokUsername">TikTok @ (необязательно)</Label>
-            <Input id="tiktokUsername" placeholder="alex_streams" {...form.register('tiktokUsername')} />
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-2">
+                <Music2 className="size-4 text-fuchsia-500" />
+                TikTok аккаунты
+              </Label>
+              <span className="text-xs text-muted-foreground">
+                {fields.length}/10
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {fields.map((field, index) => (
+                <div key={field.id} className="flex items-center gap-2">
+                  <div className="flex flex-1 items-center rounded-md border bg-background overflow-hidden focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+                    <span className="px-3 text-sm text-muted-foreground select-none">@</span>
+                    <Input
+                      placeholder="alex_streams"
+                      autoComplete="off"
+                      className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                      {...form.register(`tiktokAccounts.${index}.value` as const)}
+                    />
+                  </div>
+                  {fields.length > 1 && (
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => remove(index)}
+                      aria-label="Удалить аккаунт"
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {fields.length < 10 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => append({ value: '' })}
+                className="gap-2"
+              >
+                <Plus className="size-4" />
+                Добавить ещё аккаунт
+              </Button>
+            )}
+
+            <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">Как выглядит TikTok @username:</p>
+              <p>
+                Откройте свой профиль в приложении TikTok — под аватаркой видно строку вида{' '}
+                <code className="rounded bg-background px-1 py-0.5">@alex_streams</code>. Вставьте сюда
+                только то, что после <code className="rounded bg-background px-1 py-0.5">@</code>.
+              </p>
+              <p>
+                Ссылка на профиль выглядит так:{' '}
+                <a
+                  href="https://www.tiktok.com/@tiktok"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-0.5 text-fuchsia-600 hover:underline dark:text-fuchsia-400"
+                >
+                  tiktok.com/@username <ExternalLink className="size-3" />
+                </a>
+                .
+              </p>
+              <p>Можно добавить несколько аккаунтов, если стримите с разных профилей.</p>
+            </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
             <Input id="email" type="email" autoComplete="email" {...form.register('email')} />
-            {form.formState.errors.email && (
-              <p className="text-xs text-destructive">{form.formState.errors.email.message}</p>
-            )}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="password">Пароль</Label>
-            <Input id="password" type="password" autoComplete="new-password" {...form.register('password')} />
+            <Input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              {...form.register('password')}
+            />
             <p className="text-xs text-muted-foreground">Не менее 8 символов.</p>
-            {form.formState.errors.password && (
-              <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
-            )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="desiredRefCode">Реферальный код</Label>
-            <div className="flex items-center rounded-md border bg-muted/40 overflow-hidden">
-              <span className="px-3 text-xs text-muted-foreground select-none">/?ref=</span>
-              <Input
-                id="desiredRefCode"
-                className="border-0 bg-transparent focus-visible:ring-0"
-                placeholder="alex_2024"
-                {...form.register('desiredRefCode')}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Буквы, цифры, дефис, подчёркивание. 3–32 символа.
+          <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-3 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">🔗 Реферальный код</p>
+            <p className="mt-1">
+              Мы создадим уникальный реф-код автоматически на основе вашего имени. После регистрации вы найдёте его
+              в дашборде — вместе с готовой реферальной ссылкой, которую можно вставлять в TikTok.
             </p>
-            {form.formState.errors.desiredRefCode && (
-              <p className="text-xs text-destructive">{form.formState.errors.desiredRefCode.message}</p>
-            )}
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={pending}>
+          <Button type="submit" className="w-full gap-2" disabled={pending}>
             {pending && <Loader2 className="size-4 animate-spin" />}
             Создать аккаунт
           </Button>
 
           <p className="text-sm text-center text-muted-foreground">
             Уже есть аккаунт?{' '}
-            <Link href="/streamer/login" className="underline-offset-4 hover:underline text-foreground">
+            <Link
+              href="/streamer/login"
+              className="underline-offset-4 hover:underline text-foreground"
+            >
               Войти
             </Link>
           </p>

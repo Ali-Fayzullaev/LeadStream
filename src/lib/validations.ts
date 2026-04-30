@@ -2,6 +2,14 @@ import { z } from 'zod';
 
 const phoneRegex = /^[+0-9()\-\s]{7,20}$/;
 const refCodeRegex = /^[a-z0-9_-]{3,32}$/i;
+// TikTok handles: 2–24 chars, letters/digits/dots/underscores. We also strip a leading '@'.
+const tiktokRegex = /^[A-Za-z0-9._]{2,24}$/;
+
+export const tiktokUsernameSchema = z
+  .string()
+  .trim()
+  .transform((s) => s.replace(/^@/, ''))
+  .pipe(z.string().regex(tiktokRegex, 'TikTok @username: 2–24 символа (буквы, цифры, точка, подчёркивание)'));
 
 export const createOrderSchema = z.object({
   customerName: z.string().trim().min(2).max(120),
@@ -19,10 +27,12 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 
 export const registerStreamerSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
-  tiktokUsername: z.string().trim().min(2).max(60).optional().nullable(),
+  tiktokUsernames: z
+    .array(tiktokUsernameSchema)
+    .min(1, 'Добавьте хотя бы один TikTok-аккаунт')
+    .max(10, 'Максимум 10 аккаунтов'),
   email: z.string().trim().email().max(200),
   password: z.string().min(8).max(72),
-  desiredRefCode: z.string().trim().regex(refCodeRegex, 'Letters, digits, dash, underscore (3–32)'),
 });
 export type RegisterStreamerInput = z.infer<typeof registerStreamerSchema>;
 
@@ -34,7 +44,6 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 export const updateStreamerProfileSchema = z.object({
   display_name: z.string().trim().min(2).max(120).optional(),
-  tiktok_username: z.string().trim().max(60).nullable().optional(),
   phone: z.string().trim().regex(phoneRegex).nullable().optional(),
   avatar_url: z.string().url().nullable().optional(),
   telegram_chat_id: z.string().trim().max(64).nullable().optional(),
@@ -85,3 +94,28 @@ export type OrderStatusInput = z.infer<typeof orderStatusSchema>;
 
 export const orderStatusUpdateSchema = orderStatusSchema.partial().omit({ key: true });
 export type OrderStatusUpdateInput = z.infer<typeof orderStatusUpdateSchema>;
+
+// ---- Learn lessons ----
+
+const youtubeUrlRegex =
+  /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|shorts\/)|youtu\.be\/)[A-Za-z0-9_-]{6,}([&?].*)?$/;
+
+export const learnLessonSchema = z.object({
+  title: z.string().trim().min(2, 'Минимум 2 символа').max(160),
+  description: z.string().trim().max(500).nullable().optional(),
+  youtube_url: z
+    .string()
+    .trim()
+    .max(300)
+    .regex(youtubeUrlRegex, 'Введите корректную ссылку на YouTube')
+    .nullable()
+    .optional()
+    .or(z.literal('').transform(() => null)),
+  body: z.string().trim().max(8000).nullable().optional(),
+  sort_order: z.coerce.number().int().min(0).max(9999).default(0),
+  is_published: z.coerce.boolean().default(true),
+});
+export type LearnLessonInput = z.infer<typeof learnLessonSchema>;
+
+export const learnLessonUpdateSchema = learnLessonSchema.partial();
+export type LearnLessonUpdateInput = z.infer<typeof learnLessonUpdateSchema>;

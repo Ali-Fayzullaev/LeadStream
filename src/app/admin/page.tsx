@@ -1,11 +1,12 @@
 import Link from 'next/link';
-import { Package, Users } from 'lucide-react';
+import { Package, Users, DollarSign, Coins } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { OrdersChart } from '@/components/streamer/orders-chart';
 import { UserAvatar } from '@/components/user-avatar';
 import { PageHeader } from '@/components/page-header';
-import { formatNumber } from '@/lib/utils';
+import { KpiCard } from '@/components/kpi-card';
+import { formatNumber, formatCurrency } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 const DAYS = 30;
@@ -70,11 +71,37 @@ export default async function AdminHomePage() {
         description={`Все стримеры, все заказы, последние ${DAYS} дней.`}
       />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Kpi icon={<Users className="size-4" />} label="Стримеры"
-             value={`${activeStreamers}/${(streamers ?? []).length}`}
-             hint={pendingStreamers > 0 ? `${pendingStreamers} ожидают проверки` : 'все проверены'} />
-        <Kpi icon={<Package className="size-4" />} label="Заказы" value={formatNumber(totalOrders)} />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          icon={<Users />}
+          tone="violet"
+          label="Стримеры"
+          value={`${activeStreamers}/${(streamers ?? []).length}`}
+          hint={pendingStreamers > 0 ? `${pendingStreamers} ожидают проверки` : 'все проверены'}
+        />
+        <KpiCard
+          icon={<Package />}
+          tone="sky"
+          label="Заказы"
+          value={formatNumber(totalOrders)}
+          series={series.map((d) => d.orders)}
+          hint={`за ${DAYS} дней`}
+        />
+        <KpiCard
+          icon={<DollarSign />}
+          tone="emerald"
+          label="Выручка"
+          value={formatCurrency(totalRevenue)}
+          series={series.map((d) => d.revenue)}
+          hint="все стримеры"
+        />
+        <KpiCard
+          icon={<Coins />}
+          tone="amber"
+          label="Комиссии"
+          value={formatCurrency(totalCommission)}
+          hint="к выплате"
+        />
       </div>
 
       <Card>
@@ -131,19 +158,5 @@ export default async function AdminHomePage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function Kpi({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-          {icon} {label}
-        </div>
-        <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
-        {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
-      </CardContent>
-    </Card>
   );
 }

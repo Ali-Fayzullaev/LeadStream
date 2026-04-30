@@ -5,14 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number, currency = 'USD') {
-  return new Intl.NumberFormat('en-US', {
+export function formatCurrency(value: number, currency = 'RUB') {
+  return new Intl.NumberFormat('ru-RU', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
 export function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US').format(value);
+  return new Intl.NumberFormat('ru-RU').format(value);
 }

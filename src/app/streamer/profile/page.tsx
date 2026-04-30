@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProfileForm } from '@/components/streamer/profile-form';
+import { TikTokAccountsManager, type TikTokAccount } from '@/components/streamer/tiktok-accounts-manager';
 import { PageHeader } from '@/components/page-header';
 
 export const dynamic = 'force-dynamic';
@@ -15,11 +16,18 @@ export default async function StreamerProfilePage() {
 
   const { data: streamer } = await supabase
     .from('streamers')
-    .select('display_name, tiktok_username, phone, avatar_url, telegram_chat_id, ref_code, commission_percent, status')
+    .select('id, display_name, phone, avatar_url, telegram_chat_id, ref_code, commission_percent, status')
     .eq('user_id', user.id)
     .maybeSingle();
 
   if (!streamer) redirect('/streamer/login');
+
+  const { data: tiktokAccounts } = await supabase
+    .from('streamer_tiktok_accounts')
+    .select('id, username, is_primary')
+    .eq('streamer_id', streamer.id)
+    .order('is_primary', { ascending: false })
+    .order('created_at', { ascending: true });
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -43,13 +51,24 @@ export default async function StreamerProfilePage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>TikTok аккаунты</CardTitle>
+          <CardDescription>
+            Привяжите профили, с которых вы стримите. Можно добавить несколько (до 10).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TikTokAccountsManager accounts={(tiktokAccounts ?? []) as TikTokAccount[]} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Редактируемые данные</CardTitle>
         </CardHeader>
         <CardContent>
           <ProfileForm
             initial={{
               display_name: streamer.display_name,
-              tiktok_username: streamer.tiktok_username ?? '',
               phone: streamer.phone ?? '',
               avatar_url: streamer.avatar_url ?? '',
               telegram_chat_id: streamer.telegram_chat_id ?? '',

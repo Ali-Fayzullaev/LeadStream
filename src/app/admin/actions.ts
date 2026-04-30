@@ -10,12 +10,16 @@ import {
   adminChangePasswordSchema,
   orderStatusSchema,
   orderStatusUpdateSchema,
+  learnLessonSchema,
+  learnLessonUpdateSchema,
   type AdminUpdateStreamerInput,
   type AdminCreateStreamerInput,
   type AdminUpdateProfileInput,
   type AdminChangePasswordInput,
   type OrderStatusInput,
   type OrderStatusUpdateInput,
+  type LearnLessonInput,
+  type LearnLessonUpdateInput,
 } from '@/lib/validations';
 
 export type ActionResult<T = unknown> = { ok: true; data?: T } | { ok: false; error: string };
@@ -286,6 +290,11 @@ export async function adminUpdateSiteSettingsAction(formData: FormData): Promise
     return { ok: false, error: 'Имя сайта: от 2 до 60 символов' };
   }
 
+  const tgRaw = String(formData.get('admin_telegram_chat_id') ?? '').trim();
+  if (tgRaw && !/^-?\d{5,32}$/.test(tgRaw)) {
+    return { ok: false, error: 'Telegram chat ID: только цифры (для групп — со знаком минус)' };
+  }
+
   const removeLogo = formData.get('remove_logo') === '1';
   const file = formData.get('logo') as File | null;
 
@@ -298,7 +307,10 @@ export async function adminUpdateSiteSettingsAction(formData: FormData): Promise
     .eq('id', 'global')
     .maybeSingle();
 
-  const update: { site_name: string; logo_url?: string | null } = { site_name: siteNameRaw };
+  const update: { site_name: string; admin_telegram_chat_id: string | null; logo_url?: string | null } = {
+    site_name: siteNameRaw,
+    admin_telegram_chat_id: tgRaw || null,
+  };
 
   if (file && file.size > 0) {
     if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
@@ -353,4 +365,55 @@ function extractStoragePath(publicUrl: string): string | null {
   const idx = publicUrl.indexOf('/branding/');
   if (idx === -1) return null;
   return publicUrl.slice(idx + '/branding/'.length);
+}
+
+
+// ---------------------------------------------------------------------------
+// Learn lessons (admin CRUD)
+// ---------------------------------------------------------------------------
+
+export async function adminCreateLearnLessonAction(input: LearnLessonInput): Promise<ActionResult<{ id: string }>> {
+  if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
+  const parsed = learnLessonSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.errors[0]?.message ?? 'Invalid input' };
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('learn_lessons')
+    .insert(parsed.data)
+    .select('id')
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/admin/learn');
+  revalidatePath('/streamer/learn');
+  return { ok: true, data: { id: data.id } };
+}
+
+export async function adminUpdateLearnLessonAction(
+  id: string,
+  input: LearnLessonUpdateInput,
+): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
+  const parsed = learnLessonUpdateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.errors[0]?.message ?? 'Invalid input' };
+
+  const admin = createAdminClient();
+  const { error } = await admin.from('learn_lessons').update(parsed.data).eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/admin/learn');
+  revalidatePath('/streamer/learn');
+  return { ok: true };
+}
+
+export async function adminDeleteLearnLessonAction(id: string): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
+  const admin = createAdminClient();
+  const { error } = await admin.from('learn_lessons').delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/admin/learn');
+  revalidatePath('/streamer/learn');
+  return { ok: true };
 }

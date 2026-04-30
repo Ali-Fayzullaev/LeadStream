@@ -28,29 +28,22 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
   if (!parsed.success) {
     return { ok: false, error: parsed.error.errors[0]?.message ?? 'Invalid input' };
   }
-  const { fullName, tiktokUsername, email, password, desiredRefCode } = parsed.data;
+  const { fullName, tiktokUsernames, email, password } = parsed.data;
 
-  // Pre-check ref_code uniqueness for a friendly error.
+  // Ref code is generated server-side by the handle_new_user() trigger
+  // using generate_unique_ref_code(full_name || email_prefix).
   const admin = createAdminClient();
-  const { data: existing } = await admin
-    .from('streamers')
-    .select('id')
-    .ilike('ref_code', desiredRefCode)
-    .maybeSingle();
-  if (existing) {
-    return { ok: false, error: `Ref-code "${desiredRefCode}" is already taken. Try another.` };
-  }
 
   const supabase = createClient();
-  const { error } = await supabase.auth.signUp({
+  const { data: signUpData, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
       data: {
         role: 'streamer',
         full_name: fullName,
-        tiktok_username: tiktokUsername ?? null,
-        desired_ref_code: desiredRefCode,
+        tiktok_username: tiktokUsernames[0] ?? null,
+        // No desired_ref_code → trigger derives a unique one.
       },
       emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/streamer/login`,
     },
@@ -59,6 +52,26 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
   if (error) {
     return { ok: false, error: error.message };
   }
+
+  // Persist all TikTok accounts using admin client (RLS would otherwise block — user not yet logged in).
+  const userId = signUpData.user?.id;
+  if (userId && tiktokUsernames.length > 0) {
+    const { data: streamer } = await admin
+      .from('streamers')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (streamer) {
+      const rows = tiktokUsernames.map((username, idx) => ({
+        streamer_id: streamer.id,
+        username,
+        is_primary: idx === 0,
+      }));
+      // Best-effort — fresh streamer has no accounts yet.
+      await admin.from('streamer_tiktok_accounts').insert(rows);
+    }
+  }
+
   return { ok: true };
 }
 

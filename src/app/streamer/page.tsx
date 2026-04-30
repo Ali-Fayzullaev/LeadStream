@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Package, Sparkles } from 'lucide-react';
+import { ArrowRight, Package, DollarSign, Coins, Sparkles } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/server';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,8 +9,9 @@ import { OrdersChart } from '@/components/streamer/orders-chart';
 import { StatusBadge } from '@/components/status-badge';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
+import { KpiCard } from '@/components/kpi-card';
 import { getOrderStatuses } from '@/lib/statuses';
-import { formatNumber } from '@/lib/utils';
+import { formatNumber, formatCurrency } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,11 +88,29 @@ export default async function StreamerDashboardPage() {
         description={<>Ставка комиссии: <b className="text-foreground">{streamer.commission_percent}%</b></>}
       />
 
-      <div className="grid gap-4 md:grid-cols-1 max-w-xs">
-        <Kpi
-          icon={<Package className="size-4" />}
-          label="Заказы (за всё время)"
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <KpiCard
+          icon={<Package />}
+          tone="violet"
+          label="Заказы"
           value={formatNumber(stats?.orders_count ?? 0)}
+          series={series.map((d) => d.orders)}
+          hint="за всё время"
+        />
+        <KpiCard
+          icon={<DollarSign />}
+          tone="emerald"
+          label="Выручка"
+          value={formatCurrency(Number(stats?.revenue ?? 0))}
+          series={series.map((d) => d.revenue)}
+          hint="привязана к вам"
+        />
+        <KpiCard
+          icon={<Coins />}
+          tone="amber"
+          label="Комиссия"
+          value={formatCurrency(Number(stats?.commission ?? 0))}
+          hint={`${streamer.commission_percent}% от выручки`}
         />
       </div>
 
@@ -158,18 +177,5 @@ export default async function StreamerDashboardPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function Kpi({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-          {icon} {label}
-        </div>
-        <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
-      </CardContent>
-    </Card>
   );
 }
