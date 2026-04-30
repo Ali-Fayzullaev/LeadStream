@@ -12,6 +12,7 @@ import {
 import { rateLimit, getClientIp } from '@/lib/rate-limit';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { sendTelegramToAdmin, buildNewStreamerNotificationHtml } from '@/lib/telegram';
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
 
@@ -55,13 +56,15 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
 
   // Persist all TikTok accounts using admin client (RLS would otherwise block — user not yet logged in).
   const userId = signUpData.user?.id;
+  let createdRefCode: string | null = null;
   if (userId && tiktokUsernames.length > 0) {
     const { data: streamer } = await admin
       .from('streamers')
-      .select('id')
+      .select('id, ref_code')
       .eq('user_id', userId)
       .maybeSingle();
     if (streamer) {
+      createdRefCode = (streamer as { ref_code?: string | null }).ref_code ?? null;
       const rows = tiktokUsernames.map((username, idx) => ({
         streamer_id: streamer.id,
         username,
@@ -70,7 +73,24 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
       // Best-effort — fresh streamer has no accounts yet.
       await admin.from('streamer_tiktok_accounts').insert(rows);
     }
+  } else if (userId) {
+    const { data: streamer } = await admin
+      .from('streamers')
+      .select('ref_code')
+      .eq('user_id', userId)
+      .maybeSingle();
+    createdRefCode = (streamer as { ref_code?: string | null } | null)?.ref_code ?? null;
   }
+
+  // Best-effort: notify admin Telegram chat about the new pending streamer.
+  void sendTelegramToAdmin(
+    buildNewStreamerNotificationHtml({
+      fullName,
+      email,
+      refCode: createdRefCode ?? '—',
+      tiktokUsernames,
+    }),
+  );
 
   return { ok: true };
 }

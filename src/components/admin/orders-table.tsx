@@ -3,13 +3,12 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Trash2, PackageSearch } from 'lucide-react';
+import { Loader2, Trash2, PackageSearch, ChevronDown } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
-import { StatusBadge } from '@/components/status-badge';
 import { adminUpdateOrderStatusAction, adminDeleteOrderAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
 
@@ -42,9 +41,6 @@ export function OrdersTable({ rows, statuses }: { rows: OrderRow[]; statuses: St
             <th className="text-left px-4 py-2 font-medium">Дата</th>
             <th className="text-left px-4 py-2 font-medium">Клиент</th>
             <th className="text-left px-4 py-2 font-medium">Телефон</th>
-            <th className="text-left px-4 py-2 font-medium">Товар</th>
-            <th className="text-right px-4 py-2 font-medium">Кол-во</th>
-            <th className="text-right px-4 py-2 font-medium">Сумма</th>
             <th className="text-left px-4 py-2 font-medium">Стример</th>
             <th className="text-left px-4 py-2 font-medium">Статус</th>
             <th className="text-right px-4 py-2 font-medium" />
@@ -109,9 +105,6 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
       </td>
       <td className="px-4 py-2">{row.customer_name}</td>
       <td className="px-4 py-2 font-mono text-xs">{row.customer_phone}</td>
-      <td className="px-4 py-2">{row.product_name}</td>
-      <td className="px-4 py-2 text-right">{row.quantity}</td>
-      <td className="px-4 py-2 text-right">{formatCurrency(Number(row.amount))}</td>
       <td className="px-4 py-2">
         {row.streamer_name ? (
           <div className="flex items-center gap-2">
@@ -128,26 +121,13 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
         )}
       </td>
       <td className="px-4 py-2">
-        <div className="flex items-center gap-2">
-          {current ? (
-            <StatusBadge label={current.label} color={current.color} />
-          ) : (
-            <span className="text-xs text-muted-foreground">{status}</span>
-          )}
-          <select
-            value={status}
-            onChange={(e) => change(e.target.value)}
-            disabled={pending}
-            className="h-7 rounded-md border border-input bg-background px-2 text-xs"
-            aria-label="Сменить статус"
-          >
-            {statuses.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <StatusSelect
+          value={status}
+          statuses={statuses}
+          onChange={change}
+          pending={pending}
+          current={current}
+        />
       </td>
       <td className="px-4 py-2 text-right">
         <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
@@ -170,5 +150,55 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
         />
       </td>
     </tr>
+  );
+}
+
+/**
+ * Single, inline-editable status pill: combines the colored badge with a native
+ * <select> overlay. Visually identical to a StatusBadge but acts as a dropdown.
+ * Only rendered inside the admin table, so editability is admin-only by design.
+ */
+function StatusSelect({
+  value,
+  statuses,
+  onChange,
+  pending,
+  current,
+}: {
+  value: string;
+  statuses: StatusOption[];
+  onChange: (next: string) => void;
+  pending: boolean;
+  current?: StatusOption;
+}) {
+  const color = current?.color ?? '#64748b';
+  const label = current?.label ?? value;
+  return (
+    <div
+      className="relative inline-flex items-center gap-1 rounded-full border font-medium px-2.5 py-1 text-xs transition-opacity"
+      style={{
+        color,
+        backgroundColor: `${color}1a`,
+        borderColor: `${color}4d`,
+        opacity: pending ? 0.6 : 1,
+      }}
+    >
+      {pending ? <Loader2 className="size-3 animate-spin" /> : null}
+      <span className="pointer-events-none">{label}</span>
+      <ChevronDown className="size-3 pointer-events-none opacity-70" />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={pending}
+        aria-label="Сменить статус"
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        {statuses.map((s) => (
+          <option key={s.key} value={s.key} style={{ color: 'inherit' }}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

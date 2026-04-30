@@ -4,6 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
+  sendTelegramMessage,
+  sendTelegramToAdmin,
+  buildStreamerStatusChangeHtml,
+  buildOrderStatusChangeHtml,
+} from '@/lib/telegram';
+import {
   adminUpdateStreamerSchema,
   adminCreateStreamerSchema,
   adminUpdateProfileSchema,
@@ -59,8 +65,27 @@ export async function adminUpdateStreamerAction(
     if (existing) return { ok: false, error: `Ref-code "${parsed.data.ref_code}" is already taken.` };
   }
 
+  // Snapshot previous state to detect status transitions.
+  const { data: prev } = await admin
+    .from('streamers')
+    .select('display_name, ref_code, status, telegram_chat_id')
+    .eq('id', id)
+    .maybeSingle();
+
   const { error } = await admin.from('streamers').update(parsed.data).eq('id', id);
   if (error) return { ok: false, error: error.message };
+
+  // Notify the streamer (and admin) on status change.
+  if (prev && parsed.data.status && parsed.data.status !== prev.status) {
+    const html = buildStreamerStatusChangeHtml({
+      fullName: (parsed.data.display_name ?? prev.display_name) as string,
+      refCode: (parsed.data.ref_code ?? prev.ref_code) as string,
+      oldStatus: prev.status as string,
+      newStatus: parsed.data.status,
+    });
+    if (prev.telegram_chat_id) void sendTelegramMessage(html, prev.telegram_chat_id as string);
+    void sendTelegramToAdmin(html);
+  }
 
   revalidatePath('/admin', 'layout');
   return { ok: true };
@@ -72,8 +97,50 @@ export async function adminUpdateOrderStatusAction(
 ): Promise<ActionResult> {
   if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
   const admin = createAdminClient();
+
+  // Snapshot order + streamer chat for notifications.
+  const { data: prev } = await admin
+    .from('orders')
+    .select('status, customer_name, product_name, amount, streamer_id')
+    .eq('id', id)
+    .maybeSingle();
+
   const { error } = await admin.from('orders').update({ status }).eq('id', id);
   if (error) return { ok: false, error: error.message };
+
+  if (prev && prev.status !== status) {
+    // Resolve human-readable labels (Russian) from order_statuses.
+    const { data: statuses } = await admin
+      .from('order_statuses')
+      .select('key, label');
+    const labelOf = (key: string) =>
+      (statuses ?? []).find((s) => (s as { key: string }).key === key)?.label ?? key;
+
+    let chatId: string | null = null;
+    if (prev.streamer_id) {
+      const { data: s } = await admin
+        .from('streamers')
+        .select('telegram_chat_id')
+        .eq('id', prev.streamer_id)
+        .maybeSingle();
+      chatId = (s as { telegram_chat_id?: string | null } | null)?.telegram_chat_id ?? null;
+    }
+
+    if (chatId) {
+      void sendTelegramMessage(
+        buildOrderStatusChangeHtml({
+          orderId: id,
+          customerName: prev.customer_name as string,
+          productName: prev.product_name as string,
+          amount: Number(prev.amount),
+          oldStatusLabel: labelOf(prev.status as string) as string,
+          newStatusLabel: labelOf(status) as string,
+        }),
+        chatId,
+      );
+    }
+  }
+
   revalidatePath('/admin', 'layout');
   return { ok: true };
 }

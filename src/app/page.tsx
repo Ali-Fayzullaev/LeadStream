@@ -14,11 +14,36 @@ import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { OrderForm } from '@/components/order-form';
 import { getAppSettings } from '@/lib/settings';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+const REF_RE = /^[a-z0-9_-]{3,32}$/i;
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: { ref?: string };
+}) {
   const settings = await getAppSettings();
+
+  // Attribute order ONLY if visitor arrived via ?ref=<code> in the URL.
+  // Direct visits to / never credit any streamer (even if a stale cookie is set).
+  let attributedRef: string | null = null;
+  let attributedStreamer: string | null = null;
+  const rawRef = (searchParams?.ref ?? '').trim();
+  if (rawRef && REF_RE.test(rawRef)) {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from('streamers')
+      .select('display_name, ref_code, status')
+      .ilike('ref_code', rawRef)
+      .maybeSingle();
+    if (data && data.status === 'active') {
+      attributedRef = data.ref_code;
+      attributedStreamer = data.display_name;
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -117,7 +142,11 @@ export default async function HomePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <OrderForm refCode={null} streamerName={null} disableAttribution />
+                <OrderForm
+                  refCode={attributedRef}
+                  streamerName={attributedStreamer}
+                  disableAttribution={!attributedRef}
+                />
               </CardContent>
             </Card>
             <p className="mt-3 text-center text-xs text-muted-foreground">

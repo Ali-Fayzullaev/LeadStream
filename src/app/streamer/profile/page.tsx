@@ -43,7 +43,18 @@ export default async function StreamerProfilePage() {
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 text-sm">
           <Field label="Email" value={user.email ?? '—'} />
-          <Field label="Статус" value={streamer.status} />
+          <Field
+            label="Статус"
+            value={
+              streamer.status === 'active'
+                ? 'Активен'
+                : streamer.status === 'pending'
+                  ? 'Ожидает проверки'
+                  : streamer.status === 'blocked'
+                    ? 'Заблокирован'
+                    : streamer.status
+            }
+          />
           <Field label="Реф-код" value={streamer.ref_code} mono />
           <Field label="Комиссия" value={`${streamer.commission_percent}%`} />
         </CardContent>

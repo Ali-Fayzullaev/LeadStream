@@ -3,7 +3,11 @@ import { cookies, headers } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createOrderSchema } from '@/lib/validations';
 import { rateLimit, getClientIp } from '@/lib/rate-limit';
-import { sendTelegramMessage, buildOrderNotificationHtml } from '@/lib/telegram';
+import {
+  sendTelegramMessage,
+  buildOrderNotificationHtml,
+  buildStreamerOrderNotificationHtml,
+} from '@/lib/telegram';
 import { REF_COOKIE } from '@/lib/ref';
 
 export const dynamic = 'force-dynamic';
@@ -92,8 +96,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message ?? 'Failed to create order' }, { status: 500 });
   }
 
-  // Best-effort Telegram notifications: general channel + streamer's personal chat.
-  const html = buildOrderNotificationHtml({
+  // Best-effort Telegram notifications: admin channel + streamer's personal chat.
+  const payload = {
     id: order.id,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
@@ -102,9 +106,9 @@ export async function POST(request: NextRequest) {
     amount: data.amount,
     streamerName,
     refCode: refSnapshot,
-  });
-  void sendTelegramMessage(html);
-  if (streamerChat) void sendTelegramMessage(html, streamerChat);
+  };
+  void sendTelegramMessage(buildOrderNotificationHtml(payload));
+  if (streamerChat) void sendTelegramMessage(buildStreamerOrderNotificationHtml(payload), streamerChat);
 
   return NextResponse.json({ id: order.id, ok: true });
 }

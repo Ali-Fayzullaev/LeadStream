@@ -87,6 +87,11 @@ function StreamerRowView({ row, appUrl }: { row: StreamerRow; appUrl: string }) 
     active: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30',
     blocked: 'bg-red-500/10 text-red-500 border-red-500/30',
   };
+  const statusLabel: Record<StreamerRow['status'], string> = {
+    pending: 'Ожидает',
+    active: 'Активен',
+    blocked: 'Заблокирован',
+  };
 
   return (
     <tr className="border-t">
@@ -129,13 +134,13 @@ function StreamerRowView({ row, appUrl }: { row: StreamerRow; appUrl: string }) 
             onChange={(e) => setDraft({ ...draft, status: e.target.value as StreamerRow['status'] })}
             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
           >
-            <option value="pending">pending</option>
-            <option value="active">active</option>
-            <option value="blocked">blocked</option>
+            <option value="pending">Ожидает</option>
+            <option value="active">Активен</option>
+            <option value="blocked">Заблокирован</option>
           </select>
         ) : (
           <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${statusBadge[row.status]}`}>
-            {row.status}
+            {statusLabel[row.status]}
           </span>
         )}
       </td>
