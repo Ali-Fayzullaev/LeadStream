@@ -17,7 +17,7 @@ interface OrdersChartProps {
   height?: number;
 }
 
-const RUB = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
+const TNG = new Intl.NumberFormat('ru-KZ', { maximumFractionDigits: 0 });
 
 function CustomTooltip({ active, payload, label }: { active?: boolean; payload?: unknown[]; label?: string }) {
   if (!active || !payload || payload.length === 0) return null;
@@ -40,7 +40,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
             <span className="size-2 rounded-full bg-emerald-500" />
             Выручка
           </span>
-          <span className="font-semibold tabular-nums">{RUB.format(revenue)} ₽</span>
+          <span className="font-semibold tabular-nums">{TNG.format(revenue)} ₸</span>
         </div>
       </div>
     </div>

@@ -70,14 +70,14 @@ export default async function StreamerLearnPage() {
       />
 
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 p-6 sm:p-8 text-white shadow-xl">
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 p-6 sm:p-8 text-white shadow-xl">
         <div
           aria-hidden
           className="pointer-events-none absolute -top-24 -right-24 size-72 rounded-full bg-white/10 blur-3xl"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-24 -left-24 size-72 rounded-full bg-fuchsia-300/20 blur-3xl"
+          className="pointer-events-none absolute -bottom-24 -left-24 size-72 rounded-full bg-orange-300/20 blur-3xl"
         />
         <div className="relative flex items-start gap-4">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/30">
@@ -253,7 +253,7 @@ export default async function StreamerLearnPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ListChecks className="size-5 text-violet-500" />
+            <ListChecks className="size-5 text-amber-500" />
             Чек-лист перед эфиром
           </CardTitle>
           <CardDescription>За 10 минут до старта пробегите глазами этот список.</CardDescription>
@@ -276,9 +276,9 @@ export default async function StreamerLearnPage() {
       </Card>
 
       {/* Pro tip */}
-      <Card className="border-violet-500/30 bg-violet-500/5">
+      <Card className="border-amber-500/30 bg-amber-500/5">
         <CardContent className="flex items-start gap-4 p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-violet-500 text-white">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-500 text-white">
             <Lightbulb className="size-5" />
           </div>
           <div className="space-y-1">

@@ -3,6 +3,7 @@ import { cookies, headers } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createOrderSchema } from '@/lib/validations';
 import { rateLimit, getClientIp } from '@/lib/rate-limit';
+import { verifyTurnstile } from '@/lib/turnstile';
 import {
   sendTelegramMessage,
   buildOrderNotificationHtml,
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
   // Rate-limit: 5 orders per minute per IP.
   const rl = rateLimit(`orders:${ip}`, 5, 60_000);
   if (!rl.ok) {
-    return NextResponse.json({ error: 'Too many requests, please slow down.' }, { status: 429 });
+    return NextResponse.json({ error: 'Слишком много запросов, подождите минуту.' }, { status: 429 });
   }
 
   let body: unknown;
@@ -31,7 +32,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Opt-out flag from forms that should never credit a streamer (e.g. root landing).
+  // Bot defence: Cloudflare Turnstile token sent as `_ts`.
+  const turnstileToken =
+    typeof body === 'object' && body !== null
+      ? ((body as { _ts?: unknown })._ts as string | undefined) ?? null
+      : null;
+  const captchaOk = await verifyTurnstile(turnstileToken, ip);
+  if (!captchaOk) {
+    return NextResponse.json(
+      { error: 'Проверка безопасности не пройдена. Обновите страницу и попробуйте снова.' },
+      { status: 403 },
+    );
+  }
+
   const noAttribution =
     typeof body === 'object' && body !== null && (body as { _no_attribution?: unknown })._no_attribution === true;
 

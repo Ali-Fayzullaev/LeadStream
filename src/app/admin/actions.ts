@@ -13,6 +13,7 @@ import {
   adminUpdateStreamerSchema,
   adminCreateStreamerSchema,
   adminUpdateProfileSchema,
+  adminUpdateEmailSchema,
   adminChangePasswordSchema,
   orderStatusSchema,
   orderStatusUpdateSchema,
@@ -21,6 +22,7 @@ import {
   type AdminUpdateStreamerInput,
   type AdminCreateStreamerInput,
   type AdminUpdateProfileInput,
+  type AdminUpdateEmailInput,
   type AdminChangePasswordInput,
   type OrderStatusInput,
   type OrderStatusUpdateInput,
@@ -213,6 +215,43 @@ export async function adminUpdateProfileAction(input: AdminUpdateProfileInput): 
     .update({ full_name: parsed.data.full_name })
     .eq('id', user.id);
   if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/admin', 'layout');
+  return { ok: true };
+}
+
+export async function adminUpdateEmailAction(input: AdminUpdateEmailInput): Promise<ActionResult> {
+  const user = await requireAdmin();
+  if (!user) return { ok: false, error: 'Forbidden' };
+  const parsed = adminUpdateEmailSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.errors[0]?.message ?? 'Invalid input' };
+
+  if (parsed.data.email.toLowerCase() === user.email?.toLowerCase()) {
+    return { ok: false, error: 'Этот email уже используется' };
+  }
+
+  // Re-authenticate via current password to confirm identity.
+  const supabase = createClient();
+  const { error: signErr } = await supabase.auth.signInWithPassword({
+    email: user.email!,
+    password: parsed.data.current_password,
+  });
+  if (signErr) return { ok: false, error: 'Текущий пароль неверный' };
+
+  const admin = createAdminClient();
+  // Update auth email immediately (skip Supabase confirmation flow).
+  const { error: authErr } = await admin.auth.admin.updateUserById(user.id, {
+    email: parsed.data.email,
+    email_confirm: true,
+  });
+  if (authErr) return { ok: false, error: authErr.message };
+
+  // Mirror in profiles table for consistent UI.
+  const { error: profErr } = await admin
+    .from('profiles')
+    .update({ email: parsed.data.email })
+    .eq('id', user.id);
+  if (profErr) return { ok: false, error: profErr.message };
 
   revalidatePath('/admin', 'layout');
   return { ok: true };

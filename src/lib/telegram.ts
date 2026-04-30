@@ -66,10 +66,10 @@ export function streamerStatusRu(status: string): string {
 // Notification builders (HTML, Russian)
 // ---------------------------------------------------------------------------
 
-function formatRub(n: number): string {
-  return new Intl.NumberFormat('ru-RU', {
+function formatTng(n: number): string {
+  return new Intl.NumberFormat('ru-KZ', {
     style: 'currency',
-    currency: 'RUB',
+    currency: 'KZT',
     maximumFractionDigits: 0,
   }).format(n);
 }
@@ -91,7 +91,7 @@ export function buildOrderNotificationHtml(o: OrderNotificationPayload): string 
     `👤 <b>Клиент:</b> ${escapeHtml(o.customerName)}`,
     `📞 <b>Телефон:</b> ${escapeHtml(o.customerPhone)}`,
     `📦 <b>Товар:</b> ${escapeHtml(o.productName)} × ${o.quantity}`,
-    `💵 <b>Сумма:</b> ${formatRub(o.amount)}`,
+    `💵 <b>Сумма:</b> ${formatTng(o.amount)}`,
   ];
   if (o.streamerName || o.refCode) {
     lines.push(
@@ -111,7 +111,7 @@ export function buildStreamerOrderNotificationHtml(o: OrderNotificationPayload):
     '🎉 <b>Вам пришла новая заявка!</b>',
     `👤 ${escapeHtml(o.customerName)} · 📞 ${escapeHtml(o.customerPhone)}`,
     `📦 ${escapeHtml(o.productName)} × ${o.quantity}`,
-    `💵 ${formatRub(o.amount)}`,
+    `💵 ${formatTng(o.amount)}`,
     `🔗 <a href="${APP_URL}/streamer/orders">Открыть кабинет</a>`,
   ].join('\n');
 }
@@ -186,7 +186,7 @@ export function buildOrderStatusChangeHtml(o: OrderStatusChangePayload): string 
     '🔄 <b>Статус заявки обновлён</b>',
     `👤 ${escapeHtml(o.customerName)}`,
     `📦 ${escapeHtml(o.productName)}`,
-    `💵 ${formatRub(o.amount)}`,
+    `💵 ${formatTng(o.amount)}`,
     `📊 <b>Было:</b> ${escapeHtml(o.oldStatusLabel)}`,
     `📊 <b>Стало:</b> ${escapeHtml(o.newStatusLabel)}`,
     `🆔 <code>${escapeHtml(o.orderId)}</code>`,

@@ -36,6 +36,17 @@ export const registerStreamerSchema = z.object({
 });
 export type RegisterStreamerInput = z.infer<typeof registerStreamerSchema>;
 
+/** Step 2 of registration: verify the 6-digit email code. */
+export const registerStreamerVerifySchema = registerStreamerSchema.extend({
+  code: z.string().trim().regex(/^\d{6}$/, 'Код должен состоять из 6 цифр'),
+});
+export type RegisterStreamerVerifyInput = z.infer<typeof registerStreamerVerifySchema>;
+
+export const requestEmailCodeSchema = z.object({
+  email: z.string().trim().email().max(200),
+});
+export type RequestEmailCodeInput = z.infer<typeof requestEmailCodeSchema>;
+
 export const loginSchema = z.object({
   email: z.string().trim().email().max(200),
   password: z.string().min(1).max(72),
@@ -77,6 +88,12 @@ export const adminUpdateProfileSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
 });
 export type AdminUpdateProfileInput = z.infer<typeof adminUpdateProfileSchema>;
+
+export const adminUpdateEmailSchema = z.object({
+  email: z.string().trim().email('Введите корректный email').max(200),
+  current_password: z.string().min(1, 'Укажите текущий пароль'),
+});
+export type AdminUpdateEmailInput = z.infer<typeof adminUpdateEmailSchema>;
 
 export const adminChangePasswordSchema = z.object({
   current_password: z.string().min(1),

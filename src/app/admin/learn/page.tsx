@@ -26,9 +26,9 @@ export default async function AdminLearnPage() {
         description="Управляйте видео-уроками и материалами для стримеров."
       />
 
-      <Card className="bg-gradient-to-br from-violet-500/5 via-fuchsia-500/5 to-transparent ring-1 ring-violet-500/20">
+      <Card className="bg-gradient-to-br from-amber-500/5 via-orange-500/5 to-transparent ring-1 ring-amber-500/20">
         <CardContent className="p-5 flex items-start gap-3">
-          <span className="inline-flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
+          <span className="inline-flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white">
             <GraduationCap className="size-5" />
           </span>
           <div className="text-sm">

@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { Loader2, ShoppingBag } from 'lucide-react';
+import { Loader2, ShoppingBag, ShieldCheck } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Turnstile } from '@/components/turnstile';
 import { createOrderSchema, type CreateOrderInput } from '@/lib/validations';
 
 interface OrderFormProps {
@@ -31,13 +32,16 @@ export function OrderForm({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // Honeypot — hidden field bots fill, humans don't see.
+  const [hp, setHp] = useState('');
 
   const form = useForm<CreateOrderInput>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
       customerName: '',
       customerPhone: '',
-      productName: defaultProductName ?? 'Заказ',
+      productName: defaultProductName ?? 'Заявка',
       quantity: 1,
       amount: defaultAmount ?? 0,
       notes: '',
@@ -47,10 +51,19 @@ export function OrderForm({
 
   const onSubmit = form.handleSubmit((values) => {
     setError(null);
+    if (hp) {
+      // Silent honeypot trip — pretend to succeed.
+      toast.success('Заявка отправлена');
+      return;
+    }
+    if (!captchaToken) {
+      setError('Подождите проверку безопасности и попробуйте снова.');
+      return;
+    }
     start(async () => {
       const payload = disableAttribution
-        ? { ...values, ref: null, _no_attribution: true }
-        : values;
+        ? { ...values, ref: null, _no_attribution: true, _ts: captchaToken }
+        : { ...values, _ts: captchaToken };
       const res = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -58,12 +71,12 @@ export function OrderForm({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const msg = json?.error ?? 'Ошибка при оформлении заказа';
+        const msg = json?.error ?? 'Ошибка при отправке заявки';
         setError(msg);
         toast.error(msg);
         return;
       }
-      toast.success('Заказ оформлен!');
+      toast.success('Заявка отправлена!');
       router.push(`/thanks?id=${encodeURIComponent(json.id)}`);
     });
   });
@@ -79,18 +92,40 @@ export function OrderForm({
       </div>
       <div className="space-y-2">
         <Label htmlFor="customerPhone">Номер телефона</Label>
-        <Input id="customerPhone" type="tel" placeholder="+7 999 123 45 67" autoComplete="tel" {...form.register('customerPhone')} />
+        <Input id="customerPhone" type="tel" placeholder="+7 700 123 45 67" autoComplete="tel" {...form.register('customerPhone')} />
         {form.formState.errors.customerPhone && (
           <p className="text-xs text-destructive">{form.formState.errors.customerPhone.message}</p>
         )}
       </div>
 
+      {/* Honeypot (hidden from real users) */}
+      <div aria-hidden className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden opacity-0">
+        <label>
+          Не заполняйте это поле
+          <input
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            value={hp}
+            onChange={(e) => setHp(e.target.value)}
+          />
+        </label>
+      </div>
+
+      {/* Cloudflare Turnstile — silent bot check */}
+      <Turnstile onToken={setCaptchaToken} />
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Button type="submit" size="lg" className="w-full" disabled={pending}>
+      <Button type="submit" size="lg" className="w-full" disabled={pending || !captchaToken}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <ShoppingBag className="size-4" />}
         Оставить заявку
       </Button>
+
+      <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+        <ShieldCheck className="size-3" />
+        Защита от ботов: Cloudflare Turnstile
+      </p>
     </form>
   );
 }

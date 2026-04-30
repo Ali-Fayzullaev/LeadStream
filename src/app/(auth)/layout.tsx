@@ -6,13 +6,13 @@ import { getAppSettings } from '@/lib/settings';
 export default async function AuthLayout({ children }: { children: React.ReactNode }) {
   const { site_name, logo_url } = await getAppSettings();
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-background text-foreground">
+    <div className="h-screen overflow-hidden grid lg:grid-cols-2 bg-background text-foreground">
       {/* Brand pane (lg+) */}
-      <aside className="relative hidden lg:flex flex-col justify-between overflow-hidden p-10 text-white">
+      <aside className="relative isolate hidden lg:flex flex-col justify-between overflow-hidden p-10 text-white">
         {/* Animated gradient background */}
         <div
           aria-hidden
-          className="absolute inset-0 -z-10 bg-[radial-gradient(80%_60%_at_20%_10%,rgba(168,85,247,0.55),transparent_60%),radial-gradient(60%_50%_at_80%_90%,rgba(236,72,153,0.4),transparent_60%),linear-gradient(135deg,#0f0a24_0%,#1a0b3a_50%,#2d0a5e_100%)]"
+          className="absolute inset-0 -z-10 bg-[radial-gradient(80%_60%_at_20%_10%,rgba(245,158,11,0.55),transparent_60%),radial-gradient(60%_50%_at_80%_90%,rgba(249,115,22,0.4),transparent_60%),linear-gradient(135deg,#1a1206_0%,#2b1a06_50%,#3d2408_100%)]"
         />
         {/* Grid pattern */}
         <div
@@ -20,8 +20,8 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
           className="absolute inset-0 -z-10 opacity-[0.07] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:48px_48px]"
         />
         {/* Soft floating blobs */}
-        <div aria-hidden className="absolute top-1/3 -left-10 size-72 rounded-full bg-fuchsia-500/30 blur-3xl" />
-        <div aria-hidden className="absolute bottom-10 right-10 size-60 rounded-full bg-violet-500/30 blur-3xl" />
+        <div aria-hidden className="absolute top-1/3 -left-10 size-72 rounded-full bg-amber-500/30 blur-3xl" />
+        <div aria-hidden className="absolute bottom-10 right-10 size-60 rounded-full bg-orange-500/30 blur-3xl" />
 
         <Link href="/" className="relative flex items-center gap-2.5 text-lg font-semibold tracking-tight">
           {logo_url ? (
@@ -46,7 +46,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
             </span>
             <h1 className="text-4xl font-bold leading-tight tracking-tight">
               Управляйте трафиком стримеров —{' '}
-              <span className="bg-gradient-to-r from-fuchsia-300 via-pink-200 to-violet-200 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-amber-300 via-orange-200 to-amber-200 bg-clip-text text-transparent">
                 как профи
               </span>
               .
@@ -75,15 +75,15 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
       </aside>
 
       {/* Form pane */}
-      <section className="relative flex flex-col bg-gradient-to-br from-background via-muted/40 to-background">
+      <section className="relative flex flex-col overflow-hidden bg-gradient-to-br from-background via-muted/40 to-background">
         {/* Decorative blurs (light theme readability boost) */}
         <div
           aria-hidden
-          className="pointer-events-none absolute -top-24 -right-24 size-72 rounded-full bg-violet-500/10 blur-3xl dark:bg-violet-500/20"
+          className="pointer-events-none absolute -top-24 -right-24 size-72 rounded-full bg-amber-500/10 blur-3xl dark:bg-amber-500/20"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute -bottom-32 -left-20 size-80 rounded-full bg-fuchsia-500/10 blur-3xl dark:bg-fuchsia-500/20"
+          className="pointer-events-none absolute -bottom-32 -left-20 size-80 rounded-full bg-orange-500/10 blur-3xl dark:bg-orange-500/20"
         />
         <header className="relative flex items-center justify-between px-6 lg:px-10 py-4 border-b lg:border-b-0">
           <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight lg:hidden">
@@ -101,8 +101,8 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
             <ThemeToggle />
           </div>
         </header>
-        <main className="relative flex-1 flex items-center justify-center p-6 lg:p-10">
-          <div className="w-full max-w-md">{children}</div>
+        <main className="relative flex-1 flex items-start justify-center overflow-y-auto p-6 lg:p-10">
+          <div className="w-full max-w-md my-auto">{children}</div>
         </main>
       </section>
     </div>

@@ -59,7 +59,7 @@ export default async function HomePage({
                 className="size-7 rounded-md object-contain"
               />
             ) : (
-              <span className="size-7 rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+              <span className="size-7 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
                 <Sparkles className="size-4 text-white" />
               </span>
             )}
@@ -90,8 +90,8 @@ export default async function HomePage({
           aria-hidden
           className="pointer-events-none absolute inset-0 overflow-hidden"
         >
-          <div className="absolute -top-40 -left-32 size-[500px] rounded-full bg-violet-500/10 blur-3xl dark:bg-violet-500/20" />
-          <div className="absolute -top-20 right-0 size-[420px] rounded-full bg-fuchsia-500/10 blur-3xl dark:bg-fuchsia-500/20" />
+          <div className="absolute -top-40 -left-32 size-[500px] rounded-full bg-amber-500/10 blur-3xl dark:bg-amber-500/20" />
+          <div className="absolute -top-20 right-0 size-[420px] rounded-full bg-orange-500/10 blur-3xl dark:bg-orange-500/20" />
           <div className="absolute inset-0 opacity-[0.025] dark:opacity-[0.05] [background-image:linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] [background-size:48px_48px]" />
         </div>
 
@@ -108,7 +108,7 @@ export default async function HomePage({
 
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
               Оставьте заявку —{' '}
-              <span className="bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-amber-600 via-orange-500 to-amber-600 bg-clip-text text-transparent">
                 перезвоним за 15 минут
               </span>
             </h1>
@@ -122,8 +122,6 @@ export default async function HomePage({
             <ul className="grid gap-3 sm:grid-cols-2 max-w-lg">
               <Bullet icon={<Phone className="size-4" />} text="Звонок в течение 15 минут" />
               <Bullet icon={<ShieldCheck className="size-4" />} text="Безопасная оплата" />
-              <Bullet icon={<Clock className="size-4" />} text="Доставка по всей стране" />
-              <Bullet icon={<HeartHandshake className="size-4" />} text="Возврат 14 дней" />
             </ul>
           </div>
 
@@ -132,7 +130,7 @@ export default async function HomePage({
             <Card className="shadow-2xl ring-1 ring-border/60 backdrop-blur bg-card/95">
               <CardHeader className="space-y-1">
                 <CardTitle className="text-2xl flex items-center gap-2">
-                  <span className="inline-flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
+                  <span className="inline-flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white">
                     <Zap className="size-4" />
                   </span>
                   Оставьте заявку
@@ -159,7 +157,7 @@ export default async function HomePage({
         <div className="border-t bg-muted/30">
           <div className="container py-8 grid gap-4 sm:grid-cols-3 text-sm">
             <TrustItem
-              icon={<Phone className="size-5 text-violet-500" />}
+              icon={<Phone className="size-5 text-amber-500" />}
               title="Быстрый ответ"
               text="Менеджер перезвонит в течение 15 минут после заявки."
             />
@@ -167,11 +165,6 @@ export default async function HomePage({
               icon={<ShieldCheck className="size-5 text-emerald-500" />}
               title="Безопасно"
               text="Ваши данные защищены и не передаются третьим лицам."
-            />
-            <TrustItem
-              icon={<HeartHandshake className="size-5 text-fuchsia-500" />}
-              title="Гарантия возврата"
-              text="Если что-то не так — вернём деньги в течение 14 дней."
             />
           </div>
         </div>

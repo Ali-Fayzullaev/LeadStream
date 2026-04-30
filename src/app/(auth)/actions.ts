@@ -6,56 +6,121 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import {
   loginSchema,
   registerStreamerSchema,
+  registerStreamerVerifySchema,
+  requestEmailCodeSchema,
   type LoginInput,
   type RegisterStreamerInput,
+  type RegisterStreamerVerifyInput,
+  type RequestEmailCodeInput,
 } from '@/lib/validations';
 import { rateLimit, getClientIp } from '@/lib/rate-limit';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { sendTelegramToAdmin, buildNewStreamerNotificationHtml } from '@/lib/telegram';
+import { generateOtp, hashOtp, sendVerificationCodeEmail } from '@/lib/email';
 
 export type AuthResult = { ok: true } | { ok: false; error: string };
 
 /**
- * Streamer self-registration.
+ * Step 1 — request a 6-digit email code.
+ * Stores a hashed code in `auth_codes` and emails it via Resend.
+ * Always returns ok=true to prevent email enumeration (unless rate-limited).
+ */
+export async function requestRegistrationCodeAction(
+  input: RequestEmailCodeInput,
+): Promise<AuthResult> {
+  const ip = getClientIp(headers());
+  const rl = rateLimit(`otp:${ip}`, 6, 60 * 60 * 1000); // 6 / hour / IP
+  if (!rl.ok) return { ok: false, error: 'Слишком много попыток. Попробуйте позже.' };
+
+  const parsed = requestEmailCodeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'Введите корректный email' };
+  const email = parsed.data.email.toLowerCase();
+
+  // Per-email cooldown: max 3 codes / 10 minutes.
+  const rlEmail = rateLimit(`otp-email:${email}`, 3, 10 * 60 * 1000);
+  if (!rlEmail.ok) return { ok: false, error: 'Код уже отправлен. Проверьте почту или подождите немного.' };
+
+  const code = generateOtp();
+  const code_hash = hashOtp(email, code);
+
+  const admin = createAdminClient();
+  const expires_at = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const { error: insertErr } = await admin.from('auth_codes').insert({
+    email,
+    purpose: 'register',
+    code_hash,
+    expires_at,
+  });
+  if (insertErr) return { ok: false, error: 'Не удалось создать код. Попробуйте позже.' };
+
+  const send = await sendVerificationCodeEmail(email, code);
+  if (!send.ok) return { ok: false, error: send.error };
+  return { ok: true };
+}
+
+async function verifyAndConsumeOtp(email: string, code: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const code_hash = hashOtp(email.toLowerCase(), code);
+
+  // Most recent unused, unexpired code with matching hash.
+  const { data: row } = await admin
+    .from('auth_codes')
+    .select('id, expires_at, used_at')
+    .eq('email', email.toLowerCase())
+    .eq('purpose', 'register')
+    .eq('code_hash', code_hash)
+    .is('used_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!row) return false;
+
+  await admin.from('auth_codes').update({ used_at: new Date().toISOString() }).eq('id', row.id);
+  return true;
+}
+
+/**
+ * Step 2 — verify code + create the streamer account.
  * Trigger handle_new_user creates profile (role='streamer') + streamer (status='pending').
  */
-export async function registerStreamerAction(input: RegisterStreamerInput): Promise<AuthResult> {
+export async function registerStreamerAction(
+  input: RegisterStreamerVerifyInput,
+): Promise<AuthResult> {
   const ip = getClientIp(headers());
   const rl = rateLimit(`register:${ip}`, 5, 60 * 60 * 1000); // 5 / hour / IP
-  if (!rl.ok) return { ok: false, error: 'Too many registration attempts. Try again later.' };
+  if (!rl.ok) return { ok: false, error: 'Слишком много попыток регистрации. Попробуйте позже.' };
 
-  const parsed = registerStreamerSchema.safeParse(input);
+  const parsed = registerStreamerVerifySchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.errors[0]?.message ?? 'Invalid input' };
   }
-  const { fullName, tiktokUsernames, email, password } = parsed.data;
+  const { fullName, tiktokUsernames, email, password, code } = parsed.data;
 
-  // Ref code is generated server-side by the handle_new_user() trigger
-  // using generate_unique_ref_code(full_name || email_prefix).
+  const codeOk = await verifyAndConsumeOtp(email, code);
+  if (!codeOk) return { ok: false, error: 'Код неверный или истёк. Запросите новый.' };
+
   const admin = createAdminClient();
 
-  const supabase = createClient();
-  const { data: signUpData, error } = await supabase.auth.signUp({
+  // Use admin.createUser with email_confirm:true so Supabase never sends its
+  // own confirmation email — we already verified ownership via OTP above.
+  const { data: signUpData, error } = await admin.auth.admin.createUser({
     email,
     password,
-    options: {
-      data: {
-        role: 'streamer',
-        full_name: fullName,
-        tiktok_username: tiktokUsernames[0] ?? null,
-        // No desired_ref_code → trigger derives a unique one.
-      },
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/streamer/login`,
+    email_confirm: true,
+    user_metadata: {
+      role: 'streamer',
+      full_name: fullName,
+      tiktok_username: tiktokUsernames[0] ?? null,
     },
   });
 
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+  if (error) return { ok: false, error: error.message };
 
-  // Persist all TikTok accounts using admin client (RLS would otherwise block — user not yet logged in).
   const userId = signUpData.user?.id;
+
+  // Persist all TikTok accounts using admin client (RLS would otherwise block).
   let createdRefCode: string | null = null;
   if (userId && tiktokUsernames.length > 0) {
     const { data: streamer } = await admin
@@ -70,7 +135,6 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
         username,
         is_primary: idx === 0,
       }));
-      // Best-effort — fresh streamer has no accounts yet.
       await admin.from('streamer_tiktok_accounts').insert(rows);
     }
   } else if (userId) {
@@ -82,7 +146,6 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
     createdRefCode = (streamer as { ref_code?: string | null } | null)?.ref_code ?? null;
   }
 
-  // Best-effort: notify admin Telegram chat about the new pending streamer.
   void sendTelegramToAdmin(
     buildNewStreamerNotificationHtml({
       fullName,
@@ -94,6 +157,9 @@ export async function registerStreamerAction(input: RegisterStreamerInput): Prom
 
   return { ok: true };
 }
+
+/** @deprecated kept only for backwards-compat with any imports — not used anymore. */
+export type _UnusedRegisterStreamerInput = RegisterStreamerInput;
 
 /** Streamer or admin login. Redirects on success based on profile.role. */
 export async function loginAction(input: LoginInput, expectedRole: 'admin' | 'streamer'): Promise<AuthResult> {
