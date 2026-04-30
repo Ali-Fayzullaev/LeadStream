@@ -270,3 +270,87 @@ export async function adminDeleteStatusAction(
   revalidatePath('/admin', 'layout');
   return { ok: true };
 }
+
+// ============================================================================
+// App settings (site name + logo)
+// ============================================================================
+
+const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
+const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+
+export async function adminUpdateSiteSettingsAction(formData: FormData): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
+
+  const siteNameRaw = String(formData.get('site_name') ?? '').trim();
+  if (siteNameRaw.length < 2 || siteNameRaw.length > 60) {
+    return { ok: false, error: 'Имя сайта: от 2 до 60 символов' };
+  }
+
+  const removeLogo = formData.get('remove_logo') === '1';
+  const file = formData.get('logo') as File | null;
+
+  const admin = createAdminClient();
+
+  // Load current row to know previous logo path (for cleanup).
+  const { data: current } = await admin
+    .from('app_settings')
+    .select('logo_url')
+    .eq('id', 'global')
+    .maybeSingle();
+
+  const update: { site_name: string; logo_url?: string | null } = { site_name: siteNameRaw };
+
+  if (file && file.size > 0) {
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      return { ok: false, error: 'Логотип: разрешены PNG, JPG, SVG, WEBP' };
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      return { ok: false, error: 'Логотип: размер до 2 MB' };
+    }
+    const ext =
+      file.type === 'image/svg+xml'
+        ? 'svg'
+        : file.type === 'image/png'
+          ? 'png'
+          : file.type === 'image/webp'
+            ? 'webp'
+            : 'jpg';
+    const path = `logo-${Date.now()}.${ext}`;
+    const buf = Buffer.from(await file.arrayBuffer());
+    const { error: upErr } = await admin.storage
+      .from('branding')
+      .upload(path, buf, { contentType: file.type, upsert: true });
+    if (upErr) return { ok: false, error: upErr.message };
+
+    const { data: pub } = admin.storage.from('branding').getPublicUrl(path);
+    update.logo_url = pub.publicUrl;
+
+    // Best-effort cleanup of previous file.
+    if (current?.logo_url) {
+      const prev = extractStoragePath(current.logo_url);
+      if (prev && prev !== path) {
+        await admin.storage.from('branding').remove([prev]).catch(() => {});
+      }
+    }
+  } else if (removeLogo) {
+    update.logo_url = null;
+    if (current?.logo_url) {
+      const prev = extractStoragePath(current.logo_url);
+      if (prev) await admin.storage.from('branding').remove([prev]).catch(() => {});
+    }
+  }
+
+  const { error } = await admin
+    .from('app_settings')
+    .upsert({ id: 'global', ...update }, { onConflict: 'id' });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+function extractStoragePath(publicUrl: string): string | null {
+  const idx = publicUrl.indexOf('/branding/');
+  if (idx === -1) return null;
+  return publicUrl.slice(idx + '/branding/'.length);
+}

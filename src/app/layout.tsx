@@ -2,15 +2,20 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { getAppSettings } from '@/lib/settings';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
-export const metadata: Metadata = {
-  title: 'LeadStream — Streamer-driven order tracking',
-  description:
-    'Track orders that come from your TikTok streamers. Real-time stats, per-streamer attribution, and instant Telegram notifications.',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { site_name, logo_url } = await getAppSettings();
+  return {
+    title: { default: site_name, template: `%s — ${site_name}` },
+    description:
+      'Track orders that come from your TikTok streamers. Real-time stats, per-streamer attribution, and instant Telegram notifications.',
+    metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'),
+    icons: logo_url ? { icon: logo_url } : undefined,
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: [

@@ -5,19 +5,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ThemeToggle } from '@/components/theme-toggle';
 import { OrderForm } from '@/components/order-form';
 import { resolveRefFromCookie } from '@/lib/ref';
+import { getAppSettings } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const ref = await resolveRefFromCookie();
+  const [ref, settings] = await Promise.all([resolveRefFromCookie(), getAppSettings()]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <header className="border-b">
         <div className="container flex items-center justify-between h-14">
           <span className="font-semibold tracking-tight flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" />
-            LeadStream
+            {settings.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={settings.logo_url} alt="" className="size-6 rounded object-contain" />
+            ) : (
+              <Sparkles className="size-4 text-primary" />
+            )}
+            {settings.site_name}
           </span>
           <ThemeToggle />
           <Link href="/streamer/login" className="text-sm text-muted-foreground hover:text-foreground">
@@ -45,7 +51,7 @@ export default async function HomePage() {
 
       <footer className="border-t">
         <div className="container py-4 text-xs text-muted-foreground text-center">
-          © {new Date().getFullYear()} LeadStream
+          © {new Date().getFullYear()} {settings.site_name}
         </div>
       </footer>
     </div>

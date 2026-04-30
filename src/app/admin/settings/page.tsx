@@ -1,12 +1,14 @@
 import { redirect } from 'next/navigation';
-import { User, Tag } from 'lucide-react';
+import { User, Tag, Image as ImageIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
+import { getAppSettings } from '@/lib/settings';
 import { ProfileSection } from './profile-section';
 import { PasswordSection } from './password-section';
 import { StatusesSection } from './statuses-section';
+import { SiteSection } from './site-section';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,18 +36,26 @@ export default async function AdminSettingsPage({ searchParams }: { searchParams
     .select('key, label, color, sort_order, is_system')
     .order('sort_order', { ascending: true });
 
-  const tab = searchParams?.tab === 'statuses' ? 'statuses' : 'profile';
+  const settings = await getAppSettings();
+
+  const tab =
+    searchParams?.tab === 'statuses'
+      ? 'statuses'
+      : searchParams?.tab === 'site'
+        ? 'site'
+        : 'profile';
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-4xl">
       <PageHeader
         title="Настройки"
         description="Профиль администратора и конфигурация системы"
       />
 
       {/* Tabs */}
-      <div className="border-b flex gap-1">
+      <div className="border-b flex gap-1 overflow-x-auto">
         <TabLink active={tab === 'profile'} href="/admin/settings?tab=profile" icon={<User className="size-4" />} label="Профиль" />
+        <TabLink active={tab === 'site'} href="/admin/settings?tab=site" icon={<ImageIcon className="size-4" />} label="Сайт" />
         <TabLink active={tab === 'statuses'} href="/admin/settings?tab=statuses" icon={<Tag className="size-4" />} label="Статусы заказов" />
       </div>
 
@@ -74,6 +84,18 @@ export default async function AdminSettingsPage({ searchParams }: { searchParams
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {tab === 'site' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Брендинг</CardTitle>
+            <CardDescription>Имя сайта и логотип — используются везде (сайдбар, лендинг, вкладка браузера).</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <SiteSection siteName={settings.site_name} logoUrl={settings.logo_url} />
+          </CardContent>
+        </Card>
       )}
 
       {tab === 'statuses' && (
