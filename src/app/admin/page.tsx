@@ -14,13 +14,12 @@ const DAYS = 30;
 export default async function AdminHomePage() {
   const supabase = createClient();
 
-  const [{ data: streamers }, { data: stats }, { data: streamerAvatars }] = await Promise.all([
-    supabase.from('streamers').select('id, status'),
+  const [{ data: streamers }, { data: stats }] = await Promise.all([
+    supabase.from('streamers').select('id, status, avatar_url'),
     supabase.from('streamer_stats').select('id, display_name, ref_code, status, orders_count, revenue, commission'),
-    supabase.from('streamers').select('id, avatar_url'),
   ]);
 
-  const avatarMap = new Map((streamerAvatars ?? []).map((s) => [s.id, (s as { avatar_url?: string | null }).avatar_url ?? null]));
+  const avatarMap = new Map((streamers ?? []).map((s) => [s.id, (s as { avatar_url?: string | null }).avatar_url ?? null]));
 
   // Global totals — sum across the leaderboard.
   const totalOrders = (stats ?? []).reduce((s, r) => s + (r.orders_count ?? 0), 0);

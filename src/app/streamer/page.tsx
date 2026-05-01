@@ -1,17 +1,19 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Package, DollarSign, Coins, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles, Trophy } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefLinkCard } from '@/components/streamer/ref-link-card';
 import { OrdersChart } from '@/components/streamer/orders-chart';
+import { StreamerLeaderboard } from '@/components/streamer/leaderboard';
+import { StatusStats } from '@/components/streamer/status-stats';
 import { StatusBadge } from '@/components/status-badge';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
-import { KpiCard } from '@/components/kpi-card';
 import { getOrderStatuses } from '@/lib/statuses';
-import { formatNumber, formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,13 +35,6 @@ export default async function StreamerDashboardPage() {
   if (!streamer) redirect('/streamer/login');
   if (streamer.status === 'pending') redirect('/streamer/pending');
   if (streamer.status === 'blocked') redirect('/streamer/blocked');
-
-  // Aggregates for this streamer (RLS already restricts to own rows).
-  const { data: stats } = await supabase
-    .from('streamer_stats')
-    .select('orders_count, revenue, commission')
-    .eq('id', streamer.id)
-    .maybeSingle();
 
   // Daily series for the last 14 days.
   const since = new Date();
@@ -69,15 +64,45 @@ export default async function StreamerDashboardPage() {
   }
 
   // Latest 5 orders (masked).
-  const [{ data: recent }, statuses] = await Promise.all([
+  const [{ data: recent }, statuses, { data: leaderboardRaw }, { data: allOrders }] = await Promise.all([
     supabase
       .from('streamer_orders')
       .select('id, customer_name, customer_phone_masked, product_name, amount, status, created_at')
       .order('created_at', { ascending: false })
       .limit(5),
     getOrderStatuses(),
+    // Use admin client to read all active streamers for ranking (RLS on streamer_stats is per-streamer).
+    createAdminClient()
+      .from('streamer_stats')
+      .select('id, display_name, revenue, orders_count')
+      .eq('status', 'active'),
+    // All own orders for status breakdown — RLS already restricts to this streamer only.
+    supabase
+      .from('streamer_orders')
+      .select('status')
+      .limit(10000),
   ]);
   const statusMap = new Map(statuses.map((s) => [s.key, s]));
+
+  const leaderboard = (leaderboardRaw ?? []).map((r) => ({
+    id: r.id as string,
+    display_name: r.display_name as string,
+    avatar_url: null,
+    revenue: Number(r.revenue ?? 0),
+    orders_count: Number(r.orders_count ?? 0),
+  }));
+
+  // Aggregate own orders by status.
+  const statusAgg = new Map<string, number>();
+  for (const o of allOrders ?? []) {
+    statusAgg.set(o.status, (statusAgg.get(o.status) ?? 0) + 1);
+  }
+  const statusStats = statuses.map((s) => ({
+    key: s.key,
+    label: s.label,
+    color: s.color,
+    count: statusAgg.get(s.key) ?? 0,
+  }));
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
@@ -88,31 +113,8 @@ export default async function StreamerDashboardPage() {
         description={<>Ставка комиссии: <b className="text-foreground">{streamer.commission_percent}%</b></>}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <KpiCard
-          icon={<Package />}
-          tone="violet"
-          label="Заказы"
-          value={formatNumber(stats?.orders_count ?? 0)}
-          series={series.map((d) => d.orders)}
-          hint="за всё время"
-        />
-        <KpiCard
-          icon={<DollarSign />}
-          tone="emerald"
-          label="Выручка"
-          value={formatCurrency(Number(stats?.revenue ?? 0))}
-          series={series.map((d) => d.revenue)}
-          hint="привязана к вам"
-        />
-        <KpiCard
-          icon={<Coins />}
-          tone="amber"
-          label="Комиссия"
-          value={formatCurrency(Number(stats?.commission ?? 0))}
-          hint={`${streamer.commission_percent}% от выручки`}
-        />
-      </div>
+      {/* Status breakdown — only this streamer's own orders. */}
+      <StatusStats items={statusStats} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -126,6 +128,24 @@ export default async function StreamerDashboardPage() {
 
         <RefLinkCard refCode={streamer.ref_code} appUrl={appUrl} />
       </div>
+
+      {/* Streamer Leaderboard */}
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-transparent pb-4">
+          <div className="flex items-center gap-2">
+            <div className="flex size-8 items-center justify-center rounded-lg bg-amber-500/15">
+              <Trophy className="size-4 text-amber-500" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Рейтинг стримеров</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Топ-10 по выручке — соревнуйтесь и растите</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <StreamerLeaderboard entries={leaderboard} currentStreamerId={streamer.id} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

@@ -63,7 +63,7 @@ async function verifyAndConsumeOtp(email: string, code: string): Promise<boolean
   const admin = createAdminClient();
   const code_hash = hashOtp(email.toLowerCase(), code);
 
-  // Most recent unused, unexpired code with matching hash.
+  // Find the row first (need the id).
   const { data: row } = await admin
     .from('auth_codes')
     .select('id, expires_at, used_at')
@@ -77,8 +77,15 @@ async function verifyAndConsumeOtp(email: string, code: string): Promise<boolean
     .maybeSingle();
   if (!row) return false;
 
-  await admin.from('auth_codes').update({ used_at: new Date().toISOString() }).eq('id', row.id);
-  return true;
+  // Atomically mark used only if still unused (prevents TOCTOU race).
+  const { data: updated } = await admin
+    .from('auth_codes')
+    .update({ used_at: new Date().toISOString() })
+    .eq('id', row.id)
+    .is('used_at', null)
+    .select('id')
+    .maybeSingle();
+  return !!updated;
 }
 
 /**
@@ -158,23 +165,23 @@ export async function registerStreamerAction(
   return { ok: true };
 }
 
-/** @deprecated kept only for backwards-compat with any imports — not used anymore. */
-export type _UnusedRegisterStreamerInput = RegisterStreamerInput;
+/** @deprecated remove when all imports cleaned up */
+export type _UnusedRegisterStreamerInput = never;
 
 /** Streamer or admin login. Redirects on success based on profile.role. */
 export async function loginAction(input: LoginInput, expectedRole: 'admin' | 'streamer'): Promise<AuthResult> {
   const ip = getClientIp(headers());
   const rl = rateLimit(`login:${ip}`, 10, 5 * 60 * 1000); // 10 / 5min / IP
-  if (!rl.ok) return { ok: false, error: 'Too many login attempts. Try again in a few minutes.' };
+  if (!rl.ok) return { ok: false, error: 'Слишком много попыток входа. Попробуйте через несколько минут.' };
 
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: 'Invalid email or password' };
+    return { ok: false, error: 'Неверный email или пароль' };
   }
   const supabase = createClient();
   const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error || !data.user) {
-    return { ok: false, error: error?.message ?? 'Login failed' };
+    return { ok: false, error: error?.message ?? 'Ошибка входа' };
   }
 
   // Verify role matches the form
@@ -186,7 +193,7 @@ export async function loginAction(input: LoginInput, expectedRole: 'admin' | 'st
 
   if (!profile) {
     await supabase.auth.signOut();
-    return { ok: false, error: 'Profile not found' };
+    return { ok: false, error: 'Профиль не найден' };
   }
   if (profile.role !== expectedRole) {
     await supabase.auth.signOut();
@@ -194,8 +201,8 @@ export async function loginAction(input: LoginInput, expectedRole: 'admin' | 'st
       ok: false,
       error:
         expectedRole === 'admin'
-          ? 'This account is not an admin.'
-          : 'This account is not a streamer. Use the admin login.',
+          ? 'Этот аккаунт не является администратором.'
+          : 'Этот аккаунт не является стримером. Используйте вход для администратора.',
     };
   }
   return { ok: true };

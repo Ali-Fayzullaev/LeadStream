@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { User, Tag, Image as ImageIcon } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
@@ -131,7 +132,7 @@ function TabLink({
   label: string;
 }) {
   return (
-    <a
+    <Link
       href={href}
       className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
         active
@@ -141,6 +142,6 @@ function TabLink({
     >
       {icon}
       {label}
-    </a>
+    </Link>
   );
 }

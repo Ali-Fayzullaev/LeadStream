@@ -18,7 +18,8 @@ import { loginAction } from '@/app/(auth)/actions';
 export default function AdminLoginPage() {
   const router = useRouter();
   const search = useSearchParams();
-  const next = search.get('next') ?? '/admin';
+  const rawNext = search.get('next') ?? '';
+  const next = rawNext.startsWith('/') ? rawNext : '/admin';
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 

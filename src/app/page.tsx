@@ -45,6 +45,76 @@ export default async function HomePage({
     }
   }
 
+  // Minimal layout when visitor came via ?ref=xxx — show ONLY the order form.
+  if (attributedRef) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col">
+        <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container flex items-center justify-between h-14">
+            <Link href="/" className="font-semibold tracking-tight flex items-center gap-2">
+              {settings.logo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={settings.logo_url}
+                  alt=""
+                  className="size-7 rounded-md object-contain"
+                />
+              ) : (
+                <span className="size-7 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                  <Sparkles className="size-4 text-white" />
+                </span>
+              )}
+              <span>{settings.site_name}</span>
+            </Link>
+            <ThemeToggle />
+          </div>
+        </header>
+
+        <main className="relative flex-1 flex items-center justify-center py-10">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 overflow-hidden"
+          >
+            <div className="absolute -top-40 -left-32 size-[500px] rounded-full bg-amber-500/10 blur-3xl dark:bg-amber-500/20" />
+            <div className="absolute -top-20 right-0 size-[420px] rounded-full bg-orange-500/10 blur-3xl dark:bg-orange-500/20" />
+          </div>
+
+          <div className="container relative max-w-md">
+            <Card className="shadow-2xl ring-1 ring-border/60 backdrop-blur bg-card/95">
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-2xl flex items-center gap-2">
+                  <span className="inline-flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+                    <Zap className="size-4" />
+                  </span>
+                  Оставьте заявку
+                </CardTitle>
+                <CardDescription>
+                  Мы перезвоним вам в течение 15 минут для подтверждения.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <OrderForm
+                  refCode={attributedRef}
+                  streamerName={attributedStreamer}
+                  disableAttribution={false}
+                />
+              </CardContent>
+            </Card>
+            <p className="mt-3 text-center text-xs text-muted-foreground">
+              Нажимая «Оставить заявку», вы соглашаетесь на обработку персональных данных.
+            </p>
+          </div>
+        </main>
+
+        <footer className="border-t">
+          <div className="container py-6 text-center text-xs text-muted-foreground">
+            © {new Date().getFullYear()} {settings.site_name}. Все права защищены.
+          </div>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       {/* Header */}
@@ -155,7 +225,7 @@ export default async function HomePage({
 
         {/* Trust bar */}
         <div className="border-t bg-muted/30">
-          <div className="container py-8 grid gap-4 sm:grid-cols-3 text-sm">
+          <div className="container py-8 grid gap-4 sm:grid-cols-2 text-sm">
             <TrustItem
               icon={<Phone className="size-5 text-amber-500" />}
               title="Быстрый ответ"

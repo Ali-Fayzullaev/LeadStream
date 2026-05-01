@@ -100,6 +100,14 @@ export async function adminUpdateOrderStatusAction(
   if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
   const admin = createAdminClient();
 
+  // Validate status key exists.
+  const { data: statusRow } = await admin
+    .from('order_statuses')
+    .select('key')
+    .eq('key', status)
+    .maybeSingle();
+  if (!statusRow) return { ok: false, error: 'Неизвестный статус' };
+
   // Snapshot order + streamer chat for notifications.
   const { data: prev } = await admin
     .from('orders')
@@ -339,6 +347,7 @@ export async function adminDeleteStatusAction(
     .eq('key', key)
     .maybeSingle();
   if (!status) return { ok: false, error: 'Статус не найден' };
+  if (status.is_system) return { ok: false, error: 'Системные статусы нельзя удалять' };
 
   // Count orders using this status.
   const { count } = await admin

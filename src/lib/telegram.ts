@@ -28,7 +28,7 @@ export async function sendTelegramMessage(html: string, chatId?: string): Promis
   const target = chatId ?? (await resolveAdminChatId());
   if (!target) return;
   try {
-    await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -38,8 +38,12 @@ export async function sendTelegramMessage(html: string, chatId?: string): Promis
         disable_web_page_preview: true,
       }),
     });
-  } catch {
-    // swallow — notifications are best-effort
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.error('[telegram] send failed:', res.status, body.slice(0, 300));
+    }
+  } catch (err) {
+    console.error('[telegram] network error:', err);
   }
 }
 

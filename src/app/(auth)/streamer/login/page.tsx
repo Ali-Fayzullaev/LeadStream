@@ -18,7 +18,8 @@ import { loginAction } from '@/app/(auth)/actions';
 export default function StreamerLoginPage() {
   const router = useRouter();
   const search = useSearchParams();
-  const next = search.get('next') ?? '/streamer';
+  const rawNext = search.get('next') ?? '';
+  const next = rawNext.startsWith('/') ? rawNext : '/streamer';
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
