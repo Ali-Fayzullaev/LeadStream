@@ -80,8 +80,8 @@ export function TikTokAccountsManager({
               className="group flex items-center justify-between gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-accent/30"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white">
-                  <Music2 className="size-4" />
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 to-pink-500 text-white">
+                  <img src="https://static.vecteezy.com/system/resources/thumbnails/016/716/450/small_2x/tiktok-icon-free-png.png" alt="TikTok" />
                 </div>
                 <div className="min-w-0">
                   <a
