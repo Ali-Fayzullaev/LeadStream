@@ -59,6 +59,18 @@ function RankNumber({ rank }: { rank: number }) {
     </span>
   );
 }
+const getMaskedName = (name: string | null | undefined) => {
+  if (!name) return '?';
+
+  const trimmed = name.trim();
+  if (trimmed.length <= 2) return trimmed; // Короткие имена показываем полностью
+
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  const stars = '*'.repeat(trimmed.length - 2);
+
+  return `${first}${stars}${last}`;
+};
 
 function BarFill({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 4;
@@ -125,7 +137,7 @@ export function StreamerLeaderboard({ entries, currentStreamerId }: StreamerLead
                     <div className="flex items-center gap-2 min-w-0">
                       <UserAvatar name={entry.display_name} avatarUrl={entry.avatar_url ?? null} size={28} />
                       <span className={cn('truncate font-medium', isMe && 'text-amber-500')}>
-                        {isMe ? `${entry.display_name} (вы)` : entry.display_name}
+                        {isMe ? `${(entry.display_name)} (вы)` : getMaskedName(entry.display_name)}
                       </span>
                     </div>
                   </td>
