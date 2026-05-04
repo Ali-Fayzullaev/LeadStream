@@ -67,7 +67,7 @@ const getMaskedName = (name: string | null | undefined) => {
 
   const first = trimmed[0];
   const last = trimmed[trimmed.length - 1];
-  const stars = '*'.repeat(trimmed.length - 2);
+  const stars = '******';
 
   return `${first}${stars}${last}`;
 };
