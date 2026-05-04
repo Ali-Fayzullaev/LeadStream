@@ -5,15 +5,15 @@ import { getAppSettings } from '@/lib/settings';
 import { headers } from 'next/headers';
 
 /**
- * Manager layout: only renders for /manager/* pages OTHER than /manager/login
- * and /manager/blocked. Those pages are public-ish (login form / blocked notice)
- * and do not need the sidebar / authenticated context.
+ * Manager layout: renders sidebar for all /manager/* pages except
+ * /manager/login and /manager/blocked (which are public-ish).
  */
 export default async function ManagerLayout({ children }: { children: React.ReactNode }) {
   const pathname = headers().get('x-pathname') ?? '';
 
   // Public sub-routes — render children only, no sidebar / no auth check
-  if (pathname.startsWith('/manager/login') || pathname.startsWith('/manager/blocked')) {
+  if (pathname === '/manager/login' || pathname.startsWith('/manager/login?') ||
+      pathname === '/manager/blocked' || pathname.startsWith('/manager/blocked?')) {
     return <>{children}</>;
   }
 
@@ -36,7 +36,7 @@ export default async function ManagerLayout({ children }: { children: React.Reac
   const settings = await getAppSettings();
 
   return (
-    <div className="min-h-screen bg-background text-foreground lg:flex">
+    <div className="flex min-h-screen bg-background text-foreground">
       <ManagerSidebar
         userName={manager.display_name}
         userEmail={manager.email}
@@ -44,9 +44,13 @@ export default async function ManagerLayout({ children }: { children: React.Reac
         siteName={settings.site_name}
         logoUrl={settings.logo_url}
       />
-      <main className="flex-1 min-w-0">
-        <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-[1600px] mx-auto">{children}</div>
-      </main>
+      <div className="flex flex-1 flex-col min-w-0">
+        <main className="flex-1">
+          <div className="px-4 sm:px-6 lg:px-8 py-6 lg:py-8 max-w-[1600px] mx-auto">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
