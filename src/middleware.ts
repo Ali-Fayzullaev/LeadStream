@@ -29,8 +29,13 @@ function setRefCookie(res: NextResponse, ref: string) {
 }
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request: { headers: request.headers } });
   const { pathname } = request.nextUrl;
+
+  // Pass current pathname downstream so layouts can read it.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-pathname', pathname);
+
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   // Capture ?ref= attribution
   const refParam = request.nextUrl.searchParams.get('ref');

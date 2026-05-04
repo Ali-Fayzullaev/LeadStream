@@ -1,9 +1,22 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { AdminSidebar } from '@/components/admin/sidebar';
+import { ManagerSidebar } from '@/components/manager/sidebar';
 import { getAppSettings } from '@/lib/settings';
+import { headers } from 'next/headers';
 
+/**
+ * Manager layout: only renders for /manager/* pages OTHER than /manager/login
+ * and /manager/blocked. Those pages are public-ish (login form / blocked notice)
+ * and do not need the sidebar / authenticated context.
+ */
 export default async function ManagerLayout({ children }: { children: React.ReactNode }) {
+  const pathname = headers().get('x-pathname') ?? '';
+
+  // Public sub-routes — render children only, no sidebar / no auth check
+  if (pathname.startsWith('/manager/login') || pathname.startsWith('/manager/blocked')) {
+    return <>{children}</>;
+  }
+
   const supabase = createClient();
   const {
     data: { user },
@@ -11,20 +24,20 @@ export default async function ManagerLayout({ children }: { children: React.Reac
 
   if (!user) redirect('/manager/login');
 
-  // Check if manager exists
   const { data: manager } = await supabase
     .from('managers')
-    .select('id, display_name, email')
+    .select('id, display_name, email, status')
     .eq('user_id', user.id)
     .maybeSingle();
 
   if (!manager) redirect('/manager/login');
+  if (manager.status === 'blocked') redirect('/manager/blocked');
 
   const settings = await getAppSettings();
 
   return (
     <div className="min-h-screen bg-background text-foreground lg:flex">
-      <AdminSidebar
+      <ManagerSidebar
         userName={manager.display_name}
         userEmail={manager.email}
         userAvatar={null}

@@ -73,6 +73,18 @@ export default function StreamerLoginPage() {
             </Link>
           </div>
         </form>
+
+        <div className="mt-6 border-t pt-4 text-center">
+          <p className="text-sm text-muted-foreground">
+            Вы менеджер call-центра?{' '}
+            <Link
+              href="/manager/login"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Войти как менеджер
+            </Link>
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

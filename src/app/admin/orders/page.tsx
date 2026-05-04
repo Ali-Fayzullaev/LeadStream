@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
 import { OrdersTable, type OrderRow } from '@/components/admin/orders-table';
+import { AutoDistributeButton } from '@/components/admin/auto-distribute-button';
 import { getOrderStatuses } from '@/lib/statuses';
 
 export const dynamic = 'force-dynamic';
@@ -110,12 +111,15 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         title="Заказы"
         description={`${total} заказов найдено.`}
         actions={
-          <Button asChild>
-            <a href={exportHref}>
-              <Download className="size-4" />
-              Export XLSX
-            </a>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <AutoDistributeButton />
+            <Button asChild variant="outline">
+              <a href={exportHref}>
+                <Download className="size-4" />
+                Export XLSX
+              </a>
+            </Button>
+          </div>
         }
       />
 

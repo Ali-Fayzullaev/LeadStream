@@ -11,16 +11,18 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { MoreHorizontal, Loader2, Check } from 'lucide-react';
+import { MoreHorizontal, Loader2, Check, Copy, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Manager {
   id: string;
   user_id: string;
   display_name: string;
   email: string;
-  phone: string;
+  phone: string | null;
   status: string;
   distribution_count: number;
+  temp_password?: string | null;
   created_at: string;
   activeOrders?: number;
 }
@@ -29,13 +31,61 @@ interface ManagersTableProps {
   managers: Manager[];
 }
 
+function PasswordCell({ password }: { password?: string | null }) {
+  const [visible, setVisible] = useState(false);
+
+  if (!password) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+
+  const copy = () => {
+    navigator.clipboard.writeText(password).then(() => {
+      toast.success('Пароль скопирован');
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <span className="font-mono text-xs select-all">
+        {visible ? password : '••••••••••'}
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-6 shrink-0"
+        onClick={() => setVisible((v) => !v)}
+        title={visible ? 'Скрыть' : 'Показать'}
+      >
+        {visible ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-6 shrink-0"
+        onClick={copy}
+        title="Копировать пароль"
+      >
+        <Copy className="size-3" />
+      </Button>
+    </div>
+  );
+}
+
 export function ManagersTable({ managers }: ManagersTableProps) {
   const [loading, setLoading] = useState<string | null>(null);
 
-  const handleStatusChange = async (managerId: string, newStatus: 'active' | 'inactive' | 'blocked') => {
+  const handleStatusChange = async (
+    managerId: string,
+    newStatus: 'active' | 'inactive' | 'blocked',
+  ) => {
     setLoading(managerId);
-    await updateManagerStatusAction(managerId, newStatus);
+    const res = await updateManagerStatusAction(managerId, newStatus);
     setLoading(null);
+    if (!res.success) {
+      toast.error(res.error ?? 'Ошибка обновления статуса');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -72,6 +122,7 @@ export function ManagersTable({ managers }: ManagersTableProps) {
             <th className="text-left px-4 py-2 font-medium">ФИО</th>
             <th className="text-left px-4 py-2 font-medium">Email</th>
             <th className="text-left px-4 py-2 font-medium">Телефон</th>
+            <th className="text-left px-4 py-2 font-medium">Пароль</th>
             <th className="text-center px-4 py-2 font-medium">Активных заявок</th>
             <th className="text-center px-4 py-2 font-medium">Распределено</th>
             <th className="text-center px-4 py-2 font-medium">Статус</th>
@@ -81,7 +132,7 @@ export function ManagersTable({ managers }: ManagersTableProps) {
         <tbody>
           {managers.length === 0 ? (
             <tr>
-              <td colSpan={7} className="text-center py-8 text-muted-foreground">
+              <td colSpan={8} className="text-center py-8 text-muted-foreground">
                 Менеджеры не найдены
               </td>
             </tr>
@@ -90,12 +141,15 @@ export function ManagersTable({ managers }: ManagersTableProps) {
               <tr key={manager.id} className="border-t hover:bg-muted/50">
                 <td className="px-4 py-2 font-medium">{manager.display_name}</td>
                 <td className="px-4 py-2 text-sm">{manager.email}</td>
-                <td className="px-4 py-2 text-sm font-mono">{manager.phone}</td>
+                <td className="px-4 py-2 text-sm font-mono">{manager.phone ?? '—'}</td>
+                <td className="px-4 py-2">
+                  <PasswordCell password={manager.temp_password} />
+                </td>
                 <td className="px-4 py-2 text-center font-bold">
-                  <Badge variant="secondary">{manager.activeOrders || 0}</Badge>
+                  <Badge variant="secondary">{manager.activeOrders ?? 0}</Badge>
                 </td>
                 <td className="px-4 py-2 text-center text-sm text-muted-foreground">
-                  {manager.distribution_count}
+                  {manager.distribution_count ?? 0}
                 </td>
                 <td className="px-4 py-2 text-center">
                   <Badge className={getStatusColor(manager.status)}>
