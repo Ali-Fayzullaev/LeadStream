@@ -66,6 +66,116 @@ export function ManagerSidebar({
     });
   };
 
+  const sidebarContent = (showMobileClose: boolean) => (
+    <>
+      <div
+        className={cn(
+          'flex h-14 items-center border-b',
+          collapsed ? 'lg:justify-center lg:px-0 px-4 justify-between' : 'px-4 justify-between',
+        )}
+      >
+        <Link
+          href="/manager"
+          className="flex items-center gap-2 font-semibold tracking-tight min-w-0"
+          onClick={() => setMobileOpen(false)}
+        >
+          <BrandMark logoUrl={logoUrl} />
+          <span className={cn('truncate', collapsed && 'lg:hidden')}>{siteName}</span>
+          <span
+            className={cn(
+              'text-primary text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 shrink-0',
+              collapsed && 'lg:hidden',
+            )}
+          >
+            manager
+          </span>
+        </Link>
+        {showMobileClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Закрыть меню"
+          >
+            <X className="size-5" />
+          </Button>
+        )}
+      </div>
+
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        <div className="space-y-1">
+          <div
+            className={cn(
+              'px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
+              collapsed && 'lg:hidden',
+            )}
+          >
+            Рабочая зона
+          </div>
+          {NAV.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              collapsed={collapsed}
+              onClick={() => setMobileOpen(false)}
+            />
+          ))}
+        </div>
+      </nav>
+
+      <div className="border-t p-3 space-y-2">
+        <div
+          className={cn(
+            'flex items-center gap-3 rounded-md px-2 py-2',
+            collapsed && 'lg:justify-center lg:px-0',
+          )}
+          title={collapsed ? `${userName} · ${userEmail}` : undefined}
+        >
+          <UserAvatar name={userName} avatarUrl={userAvatar} size={36} />
+          <div className={cn('min-w-0 flex-1', collapsed && 'lg:hidden')}>
+            <div className="text-sm font-medium truncate">{userName}</div>
+            <div className="text-xs text-muted-foreground truncate">{userEmail}</div>
+          </div>
+        </div>
+
+        <div className={cn('flex items-center gap-1', collapsed && 'lg:flex-col')}>
+          <ThemeToggle />
+          <form
+            action={signOutAction}
+            className={cn('flex-1', collapsed && 'lg:flex-none lg:w-full')}
+          >
+            <Button
+              type="submit"
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'w-full gap-2',
+                collapsed ? 'lg:justify-center justify-start lg:px-0' : 'justify-start',
+              )}
+              aria-label="Выйти"
+              title={collapsed ? 'Выйти' : undefined}
+            >
+              <LogOut className="size-4" />
+              <span className={cn(collapsed && 'lg:hidden')}>Выйти</span>
+            </Button>
+          </form>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="hidden lg:inline-flex size-9 shrink-0"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Развернуть' : 'Свернуть'}
+            title={collapsed ? 'Развернуть' : 'Свернуть'}
+          >
+            {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <header className="lg:hidden sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background px-4">
@@ -94,116 +204,24 @@ export function ManagerSidebar({
 
       <aside
         className={cn(
-          'fixed lg:sticky top-0 left-0 z-50 h-screen shrink-0',
-          'flex flex-col border-r bg-card',
-          'transition-[width,transform] duration-300 ease-out',
-          collapsed ? 'lg:w-[72px] w-[260px]' : 'w-[260px]',
-          mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
+          'hidden lg:sticky lg:top-0 lg:z-40 lg:h-screen lg:shrink-0',
+          'lg:flex lg:flex-col border-r bg-card',
+          'transition-[width] duration-300 ease-out',
+          collapsed ? 'lg:w-[72px]' : 'lg:w-[260px]',
         )}
       >
-        <div
-          className={cn(
-            'flex h-14 items-center border-b',
-            collapsed ? 'lg:justify-center lg:px-0 px-4 justify-between' : 'px-4 justify-between',
-          )}
-        >
-          <Link
-            href="/manager"
-            className="flex items-center gap-2 font-semibold tracking-tight min-w-0"
-            onClick={() => setMobileOpen(false)}
-          >
-            <BrandMark logoUrl={logoUrl} />
-            <span className={cn('truncate', collapsed && 'lg:hidden')}>{siteName}</span>
-            <span
-              className={cn(
-                'text-primary text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 shrink-0',
-                collapsed && 'lg:hidden',
-              )}
-            >
-              manager
-            </span>
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Закрыть меню"
-          >
-            <X className="size-5" />
-          </Button>
-        </div>
+        {sidebarContent(false)}
+      </aside>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-          <div className="space-y-1">
-            <div
-              className={cn(
-                'px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground',
-                collapsed && 'lg:hidden',
-              )}
-            >
-              Рабочая зона
-            </div>
-            {NAV.map((item) => (
-              <NavLink
-                key={item.href}
-                item={item}
-                collapsed={collapsed}
-                onClick={() => setMobileOpen(false)}
-              />
-            ))}
-          </div>
-        </nav>
-
-        <div className="border-t p-3 space-y-2">
-          <div
-            className={cn(
-              'flex items-center gap-3 rounded-md px-2 py-2',
-              collapsed && 'lg:justify-center lg:px-0',
-            )}
-            title={collapsed ? `${userName} · ${userEmail}` : undefined}
-          >
-            <UserAvatar name={userName} avatarUrl={userAvatar} size={36} />
-            <div className={cn('min-w-0 flex-1', collapsed && 'lg:hidden')}>
-              <div className="text-sm font-medium truncate">{userName}</div>
-              <div className="text-xs text-muted-foreground truncate">{userEmail}</div>
-            </div>
-          </div>
-
-          <div className={cn('flex items-center gap-1', collapsed && 'lg:flex-col')}>
-            <ThemeToggle />
-            <form
-              action={signOutAction}
-              className={cn('flex-1', collapsed && 'lg:flex-none lg:w-full')}
-            >
-              <Button
-                type="submit"
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  'w-full gap-2',
-                  collapsed ? 'lg:justify-center justify-start lg:px-0' : 'justify-start',
-                )}
-                aria-label="Выйти"
-                title={collapsed ? 'Выйти' : undefined}
-              >
-                <LogOut className="size-4" />
-                <span className={cn(collapsed && 'lg:hidden')}>Выйти</span>
-              </Button>
-            </form>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="hidden lg:inline-flex size-9 shrink-0"
-              onClick={toggleCollapsed}
-              aria-label={collapsed ? 'Развернуть' : 'Свернуть'}
-              title={collapsed ? 'Развернуть' : 'Свернуть'}
-            >
-              {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-            </Button>
-          </div>
-        </div>
+      <aside
+        className={cn(
+          'lg:hidden fixed top-0 left-0 z-50 h-screen w-[260px] shrink-0',
+          'flex flex-col border-r bg-card shadow-xl',
+          'transition-transform duration-300 ease-out',
+          mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        {sidebarContent(true)}
       </aside>
     </>
   );
