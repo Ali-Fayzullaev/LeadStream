@@ -31,6 +31,9 @@ $$;
 -- 3. Re-create RLS policies on managers using is_admin()
 -- ---------------------------------------------------------------------------
 -- Manager can read their own row
+drop policy if exists "managers self read" on public.managers;
+drop policy if exists "managers self update" on public.managers;
+drop policy if exists "managers admin all" on public.managers;
 create policy "managers self read" on public.managers
   for select using (user_id = auth.uid() or public.is_admin());
 
@@ -48,6 +51,8 @@ create policy "managers admin all" on public.managers
 -- 4. Extend orders RLS so managers see only their assigned orders
 --    (admin policy already exists from 0001: "orders admin all")
 -- ---------------------------------------------------------------------------
+drop policy if exists "orders manager read" on public.orders;
+drop policy if exists "orders manager update status" on public.orders;
 create policy "orders manager read" on public.orders
   for select using (
     assigned_manager_id is not null
@@ -80,6 +85,7 @@ select
   o.streamer_id,
   o.assigned_manager_id,
   o.customer_name,
+  o.customer_phone,
   -- Mask phone like the streamer view does: first 4 + **** + last 2
   case
     when length(o.customer_phone) >= 6

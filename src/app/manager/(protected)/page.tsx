@@ -32,7 +32,7 @@ export default async function ManagerDashboardPage() {
   // Get manager's assigned orders
   const { data: orders } = await supabase
     .from('manager_orders')
-    .select('id, created_at, customer_name, customer_phone_masked, amount, status, streamer_name')
+    .select('id, created_at, customer_name, customer_phone, amount, status, streamer_name')
     .eq('assigned_manager_id', manager.id)
     .order('created_at', { ascending: false });
 
@@ -132,8 +132,8 @@ export default async function ManagerDashboardPage() {
                       <tr key={o.id} className="border-t hover:bg-muted/50">
                         <td className="px-4 py-2 font-medium">{o.customer_name}</td>
                         <td className="px-4 py-2 font-mono text-xs">
-                          <a href={`tel:${o.customer_phone_masked}`} className="text-primary hover:underline">
-                            {o.customer_phone_masked}
+                          <a href={`tel:${o.customer_phone}`} className="text-primary hover:underline">
+                            {o.customer_phone}
                           </a>
                         </td>
                         <td className="px-4 py-2 text-sm text-muted-foreground">

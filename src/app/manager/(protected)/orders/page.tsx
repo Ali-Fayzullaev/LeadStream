@@ -42,7 +42,7 @@ export default async function ManagerOrdersPage({
   let q = supabase
     .from('manager_orders')
     .select(
-      'id, created_at, customer_name, customer_phone_masked, product_name, quantity, amount, status, streamer_name',
+      'id, created_at, customer_name, customer_phone, product_name, quantity, amount, status, streamer_name',
     )
     .eq('assigned_manager_id', manager.id)
     .order('created_at', { ascending: false });
@@ -53,7 +53,7 @@ export default async function ManagerOrdersPage({
   if (searchParams?.q) {
     const like = `%${searchParams.q}%`;
     q = q.or(
-      `customer_name.ilike.${like},customer_phone_masked.ilike.${like},product_name.ilike.${like}`,
+      `customer_name.ilike.${like},customer_phone.ilike.${like},product_name.ilike.${like}`,
     );
   }
   if (searchParams?.from) q = q.gte('created_at', searchParams.from);
@@ -139,10 +139,10 @@ export default async function ManagerOrdersPage({
                         <td className="px-4 py-2 font-medium">{o.customer_name}</td>
                         <td className="px-4 py-2 font-mono text-xs">
                           <a
-                            href={`tel:${o.customer_phone_masked}`}
+                            href={`tel:${o.customer_phone}`}
                             className="text-primary hover:underline"
                           >
-                            {o.customer_phone_masked}
+                            {o.customer_phone}
                           </a>
                         </td>
                         <td className="px-4 py-2">{o.product_name}</td>

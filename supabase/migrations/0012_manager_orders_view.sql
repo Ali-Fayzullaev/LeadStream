@@ -8,6 +8,7 @@ select
   o.created_at,
   o.updated_at,
   o.customer_name,
+  o.customer_phone,
   -- Mask customer phone: +7 (912) ****34 (show only last 2 digits)
   case 
     when o.customer_phone_masked is not null and o.customer_phone_masked != '' 
