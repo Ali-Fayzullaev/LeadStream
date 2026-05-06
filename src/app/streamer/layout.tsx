@@ -8,7 +8,7 @@ export default async function StreamerLayout({ children }: { children: React.Rea
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/streamer/login');
+  if (!user) redirect('/login');
 
   const { data: streamer } = await supabase
     .from('streamers')

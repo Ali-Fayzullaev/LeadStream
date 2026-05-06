@@ -17,7 +17,7 @@
 | URL | Назначение |
 |---|---|
 | `/streamer/register` | **Регистрация стримера** (full name, TikTok @, email, password ≥ 8, ref-code). Создаёт `pending` аккаунт. |
-| `/streamer/login` | **Логин стримера**. |
+| `/login` | **Логин стримера**. |
 | `/streamer/pending` | Страница «Account under review» — пока админ не активировал. |
 | `/streamer/blocked` | Если админ заблокировал. |
 | `/streamer` | Дашборд: 3 KPI, график 14 дней, реф-линк + QR, последние 5 заказов. |
@@ -75,8 +75,8 @@ GET /some-missing-page       → 404 (наша not-found.tsx)
    - `NEXT_PUBLIC_APP_URL` = `https://your-domain.com`
    - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (опционально)
 4. **Supabase → Auth → URL Configuration**: Site URL = `https://your-domain.com`,
-   Redirect URLs добавить `https://your-domain.com/streamer/login`.
-5. Deploy → проверить `/robots.txt`, `/sitemap.xml`, `/admin/login`, `/streamer/login`.
+   Redirect URLs добавить `https://your-domain.com/login`.
+5. Deploy → проверить `/robots.txt`, `/sitemap.xml`, `/admin/login`, `/login`.
 
 > **Замечание про rate-limit.** Текущая реализация in-memory ([src/lib/rate-limit.ts](src/lib/rate-limit.ts))
 > работает на одном инстансе. При масштабировании Vercel/serverless заменить на Upstash Redis
@@ -158,7 +158,7 @@ npm run dev
 
 ## ✅ Проверка Шага 4
 
-1. Войти стримером (status=`active`) на `/streamer/login` → кабинет `/streamer`.
+1. Войти стримером (status=`active`) на `/login` → кабинет `/streamer`.
 2. Должны быть: 3 KPI-карточки, график за 14 дней, карточка реф-линка с QR, список последних заказов (телефон замаскирован).
 3. Нажать «Copy link» → в буфере `https://…/?ref=<ваш код>`.
 4. Открыть `/streamer/orders` → полный список с пагинацией, ряды видны только свои (RLS).
@@ -185,7 +185,7 @@ npm run dev
    После отправки появится экран «Check your email».
 3. Подтвердить email (или включить **Auto Confirm** в Supabase Dashboard для ускорения).
 4. В таблице `public.streamers` появится запись `status='pending'`, в `public.profiles` — `role='streamer'`.
-5. Зайти на `/streamer/login` под этим аккаунтом → должно редиректнуть на `/streamer/pending`
+5. Зайти на `/login` под этим аккаунтом → должно редиректнуть на `/streamer/pending`
    («Account under review»).
 6. В SQL Editor выполнить:
    ```sql
@@ -205,7 +205,7 @@ npm run dev
   `streamer_orders`, `streamer_stats`, `daily_stats`.
 - Запрос `select role from public.profiles where email = 'admin@yourcompany.com';`
   возвращает `admin`.
-- `/login` редиректит на `/streamer/login` (страница появится в Шаге 2 — пока 404 ожидаем).
+- `/login` редиректит на `/login` (страница появится в Шаге 2 — пока 404 ожидаем).
 
 ## 📚 Документация
 

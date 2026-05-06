@@ -197,3 +197,45 @@ export function buildOrderStatusChangeHtml(o: OrderStatusChangePayload): string 
     `🔗 <a href="${APP_URL}/streamer/orders">Открыть кабинет</a>`,
   ].join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// Manager / Broker lead notifications
+// ---------------------------------------------------------------------------
+
+export interface LeadNotificationPayload {
+  orderId: string;
+  customerName: string;
+  customerPhone: string;
+  cityName?: string | null;
+  productName: string;
+  brokerName?: string | null;
+  managerDashboardUrl?: string;
+  brokerDashboardUrl?: string;
+}
+
+/** Notification to manager's personal Telegram when a new lead arrives */
+export function buildManagerLeadNotificationHtml(o: LeadNotificationPayload): string {
+  return [
+    '📥 <b>Новый лид поступил к вам!</b>',
+    `👤 <b>Клиент:</b> ${escapeHtml(o.customerName)}`,
+    `📞 <b>Телефон:</b> ${escapeHtml(o.customerPhone)}`,
+    o.cityName ? `🏙 <b>Город:</b> ${escapeHtml(o.cityName)}` : '',
+    `📦 <b>Товар:</b> ${escapeHtml(o.productName)}`,
+    o.brokerName ? `🤝 <b>Назначен брокер:</b> ${escapeHtml(o.brokerName)}` : '',
+    `🆔 <code>${escapeHtml(o.orderId)}</code>`,
+    `🔗 <a href="${o.managerDashboardUrl ?? APP_URL + '/manager'}">Открыть кабинет</a>`,
+  ].filter(Boolean).join('\n');
+}
+
+/** Notification to broker's personal Telegram when a lead is assigned to them */
+export function buildBrokerLeadNotificationHtml(o: LeadNotificationPayload): string {
+  return [
+    '🎯 <b>Новый лид назначен вам!</b>',
+    `👤 <b>Клиент:</b> ${escapeHtml(o.customerName)}`,
+    `📞 <b>Телефон:</b> ${escapeHtml(o.customerPhone)}`,
+    o.cityName ? `🏙 <b>Город:</b> ${escapeHtml(o.cityName)}` : '',
+    `📦 <b>Товар:</b> ${escapeHtml(o.productName)}`,
+    `🆔 <code>${escapeHtml(o.orderId)}</code>`,
+    `🔗 <a href="${o.brokerDashboardUrl ?? APP_URL + '/broker'}">Открыть кабинет</a>`,
+  ].filter(Boolean).join('\n');
+}

@@ -138,7 +138,7 @@ export default async function HomePage({
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <Link
-              href="/streamer/login"
+              href="/login"
               className="text-sm text-muted-foreground hover:text-foreground transition-colors px-2"
             >
               Войти
@@ -247,10 +247,10 @@ export default async function HomePage({
             © {new Date().getFullYear()} {settings.site_name}. Все права защищены.
           </span>
           <div className="flex items-center gap-4">
-            <Link href="/streamer/login" className="hover:text-foreground transition-colors">
+            <Link href="/login" className="hover:text-foreground transition-colors">
               Стримерам
             </Link>
-            <Link href="/admin/login" className="hover:text-foreground transition-colors">
+            <Link href="/login" className="hover:text-foreground transition-colors">
               Администрация
             </Link>
           </div>

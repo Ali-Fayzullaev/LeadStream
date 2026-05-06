@@ -1,70 +1,65 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookies, headers } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { createOrderSchema } from '@/lib/validations';
 import { rateLimit, getClientIp } from '@/lib/rate-limit';
-import { verifyTurnstile } from '@/lib/turnstile';
 import {
   sendTelegramMessage,
   buildOrderNotificationHtml,
   buildStreamerOrderNotificationHtml,
+  buildManagerLeadNotificationHtml,
+  buildBrokerLeadNotificationHtml,
 } from '@/lib/telegram';
 import { REF_COOKIE } from '@/lib/ref';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+// Basic phone validation: 10-15 digits
+function isValidPhone(phone: string): boolean {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  return digits.length >= 10 && digits.length <= 15;
+}
+
 export async function POST(request: NextRequest) {
   const hdrs = headers();
   const ip = getClientIp(hdrs);
   const ua = hdrs.get('user-agent') ?? null;
 
-  // Rate-limit: 5 orders per minute per IP.
+  // Rate-limit: 5 orders per minute per IP
   const rl = rateLimit(`orders:${ip}`, 5, 60_000);
   if (!rl.ok) {
     return NextResponse.json({ error: 'Слишком много запросов, подождите минуту.' }, { status: 429 });
   }
 
-  let body: unknown;
+  let body: Record<string, unknown>;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  // Bot defence: Cloudflare Turnstile token sent as `_ts`.
-  const turnstileToken =
-    typeof body === 'object' && body !== null
-      ? ((body as { _ts?: unknown })._ts as string | undefined) ?? null
-      : null;
-  const captchaOk = await verifyTurnstile(turnstileToken, ip);
-  if (!captchaOk) {
-    return NextResponse.json(
-      { error: 'Проверка безопасности не пройдена. Обновите страницу и попробуйте снова.' },
-      { status: 403 },
-    );
+  // Extract fields
+  const customerPhone = ((body.customerPhone as string) ?? '').trim();
+  const customerName = ((body.customerName as string | null) ?? '').trim() || null;
+  const productName = ((body.productName as string) ?? 'Заявка').trim();
+  const quantity = Number(body.quantity) || 1;
+  const amount = Number(body.amount) || 0;
+  const cityId = (body.cityId as string | null) ?? null;
+  const noAttribution = body._no_attribution === true;
+
+  // Phone is required
+  if (!customerPhone || !isValidPhone(customerPhone)) {
+    return NextResponse.json({ error: 'Введите корректный номер телефона' }, { status: 400 });
   }
 
-  const noAttribution =
-    typeof body === 'object' && body !== null && (body as { _no_attribution?: unknown })._no_attribution === true;
-
-  const parsed = createOrderSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.errors[0]?.message ?? 'Invalid input' },
-      { status: 400 },
-    );
-  }
-  const data = parsed.data;
-
-  // Resolve ref: body.ref takes priority, otherwise the cookie. Skip entirely if no-attribution.
+  // Resolve ref
   const cookieRef = cookies().get(REF_COOKIE)?.value ?? null;
-  const ref = noAttribution
-    ? null
-    : (data.ref ?? cookieRef ?? '').trim().toLowerCase() || null;
+  const rawRef = (body.ref as string | undefined) ?? '';
+  const ref = noAttribution ? null : (rawRef.trim().toLowerCase() || cookieRef?.trim().toLowerCase() || null);
 
   const admin = createAdminClient();
 
+  // Resolve streamer
   let streamerId: string | null = null;
   let streamerName: string | null = null;
   let streamerChat: string | null = null;
@@ -84,20 +79,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Create order
   const { data: order, error } = await admin
     .from('orders')
     .insert({
-      customer_name: data.customerName,
-      customer_phone: data.customerPhone,
-      product_name: data.productName,
-      quantity: data.quantity,
-      amount: data.amount,
-      notes: data.notes ?? null,
+      customer_name: customerName,
+      customer_phone: customerPhone,
+      product_name: productName,
+      quantity,
+      amount,
       streamer_id: streamerId,
       ref_code_snapshot: refSnapshot,
-      utm_source: data.utm_source ?? null,
-      utm_medium: data.utm_medium ?? null,
-      utm_campaign: data.utm_campaign ?? null,
+      city_id: cityId,
       ip,
       user_agent: ua,
       status: 'new',
@@ -109,19 +102,127 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error?.message ?? 'Failed to create order' }, { status: 500 });
   }
 
-  // Best-effort Telegram notifications: admin channel + streamer's personal chat.
-  const payload = {
+  // ── City-based routing: assign to manager → then distribute to broker ──────
+  let assignedManagerId: string | null = null;
+  let assignedManagerTgId: string | null = null;
+  let assignedManagerName: string | null = null;
+  let assignedBrokerId: string | null = null;
+  let assignedBrokerTgId: string | null = null;
+  let assignedBrokerName: string | null = null;
+  let cityName: string | null = null;
+
+  if (cityId) {
+    // Get city name
+    const { data: city } = await admin.from('cities').select('name').eq('id', cityId).maybeSingle();
+    cityName = city?.name ?? null;
+
+    // Find active manager for this city with least distribution_count
+    const { data: managers } = await admin
+      .from('managers')
+      .select('id, display_name, telegram_chat_id, distribution_count')
+      .eq('city_id', cityId)
+      .eq('status', 'active')
+      .order('distribution_count', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const manager = managers?.[0] ?? null;
+
+    if (manager) {
+      assignedManagerId = manager.id;
+      assignedManagerTgId = manager.telegram_chat_id ?? null;
+      assignedManagerName = manager.display_name;
+
+      // Find active broker for this manager with least distribution_count
+      const { data: brokers } = await admin
+        .from('brokers')
+        .select('id, display_name, telegram_chat_id, distribution_count')
+        .eq('manager_id', manager.id)
+        .eq('status', 'active')
+        .order('distribution_count', { ascending: true })
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      const broker = brokers?.[0] ?? null;
+      if (broker) {
+        assignedBrokerId = broker.id;
+        assignedBrokerTgId = broker.telegram_chat_id ?? null;
+        assignedBrokerName = broker.display_name;
+      }
+
+      // Update order with assignments
+      await admin.from('orders').update({
+        assigned_manager_id: assignedManagerId,
+        assigned_broker_id: assignedBrokerId,
+        updated_at: new Date().toISOString(),
+      }).eq('id', order.id);
+
+      // Increment distribution counts
+      await admin.from('managers').update({
+        distribution_count: (manager.distribution_count ?? 0) + 1,
+        updated_at: new Date().toISOString(),
+      }).eq('id', manager.id);
+
+      if (broker) {
+        await admin.from('brokers').update({
+          distribution_count: (broker.distribution_count ?? 0) + 1,
+          updated_at: new Date().toISOString(),
+        }).eq('id', broker.id);
+      }
+    }
+  } else {
+    // No city selected — order stays unassigned, mark for admin review
+    // (already saved with city_id = null, assigned_manager_id = null)
+  }
+
+  // ── Telegram notifications ─────────────────────────────────────────────────
+  const notifPayload = {
     id: order.id,
-    customerName: data.customerName,
-    customerPhone: data.customerPhone,
-    productName: data.productName,
-    quantity: data.quantity,
-    amount: data.amount,
+    customerName: customerName ?? 'Не указано',
+    customerPhone,
+    productName,
+    quantity,
+    amount,
     streamerName,
     refCode: refSnapshot,
   };
-  void sendTelegramMessage(buildOrderNotificationHtml(payload));
-  if (streamerChat) void sendTelegramMessage(buildStreamerOrderNotificationHtml(payload), streamerChat);
+
+  // Admin channel
+  void sendTelegramMessage(buildOrderNotificationHtml(notifPayload));
+
+  // Streamer personal
+  if (streamerChat) {
+    void sendTelegramMessage(buildStreamerOrderNotificationHtml(notifPayload), streamerChat);
+  }
+
+  // Manager personal
+  if (assignedManagerTgId) {
+    void sendTelegramMessage(
+      buildManagerLeadNotificationHtml({
+        orderId: order.id,
+        customerName: customerName ?? 'Не указано',
+        customerPhone,
+        cityName,
+        productName,
+        brokerName: assignedBrokerName,
+      }),
+      assignedManagerTgId,
+    );
+  }
+
+  // Broker personal
+  if (assignedBrokerTgId) {
+    void sendTelegramMessage(
+      buildBrokerLeadNotificationHtml({
+        orderId: order.id,
+        customerName: customerName ?? 'Не указано',
+        customerPhone,
+        cityName,
+        productName,
+      }),
+      assignedBrokerTgId,
+    );
+  }
 
   return NextResponse.json({ id: order.id, ok: true });
 }

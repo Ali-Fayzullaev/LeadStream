@@ -52,7 +52,7 @@ export async function getManagerOrdersAction() {
   }
 }
 
-export async function createManagerAction(email: string, displayName: string, phone: string) {
+export async function createManagerAction(email: string, displayName: string, phone: string, cityId?: string) {
   try {
     await requireAdmin();
     const cleanEmail = email.trim().toLowerCase();
@@ -77,6 +77,7 @@ export async function createManagerAction(email: string, displayName: string, ph
       phone: cleanPhone || null,
       status: 'active',
       temp_password: tempPassword,
+      city_id: cityId || null,
     });
     if (dbError) {
       await adminClient.auth.admin.deleteUser(newUserId);

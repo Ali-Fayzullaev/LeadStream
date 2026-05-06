@@ -21,7 +21,7 @@ export default async function StreamerOrdersPage({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/streamer/login');
+  if (!user) redirect('/login');
 
   const page = Math.max(1, Number(searchParams?.page ?? 1) || 1);
   const from = (page - 1) * PAGE_SIZE;

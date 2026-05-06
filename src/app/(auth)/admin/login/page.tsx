@@ -70,7 +70,7 @@ export default function AdminLoginPage() {
           </Button>
           <p className="text-sm text-center text-muted-foreground">
             Вы стример?{' '}
-            <Link href="/streamer/login" className="underline-offset-4 hover:underline text-foreground">
+            <Link href="/login" className="underline-offset-4 hover:underline text-foreground">
               Вход для стримеров
             </Link>
           </p>

@@ -8,14 +8,14 @@ export default async function StreamerBlockedPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/streamer/login');
+  if (!user) redirect('/login');
 
   const { data: streamer } = await supabase
     .from('streamers')
     .select('status, notes')
     .eq('user_id', user.id)
     .maybeSingle();
-  if (!streamer) redirect('/streamer/login');
+  if (!streamer) redirect('/login');
   if (streamer.status === 'active') redirect('/streamer');
   if (streamer.status === 'pending') redirect('/streamer/pending');
 

@@ -24,7 +24,7 @@ export default async function StreamerDashboardPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/streamer/login');
+  if (!user) redirect('/login');
 
   const { data: streamer } = await supabase
     .from('streamers')
@@ -32,7 +32,7 @@ export default async function StreamerDashboardPage() {
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (!streamer) redirect('/streamer/login');
+  if (!streamer) redirect('/login');
   if (streamer.status === 'pending') redirect('/streamer/pending');
   if (streamer.status === 'blocked') redirect('/streamer/blocked');
 

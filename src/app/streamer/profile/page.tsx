@@ -12,7 +12,7 @@ export default async function StreamerProfilePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect('/streamer/login');
+  if (!user) redirect('/login');
 
   const { data: streamer } = await supabase
     .from('streamers')
@@ -20,7 +20,7 @@ export default async function StreamerProfilePage() {
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (!streamer) redirect('/streamer/login');
+  if (!streamer) redirect('/login');
 
   const { data: tiktokAccounts } = await supabase
     .from('streamer_tiktok_accounts')

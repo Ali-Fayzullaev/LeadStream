@@ -4,52 +4,34 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 /**
  * Middleware responsibilities:
  * - Refresh Supabase session cookie on every request.
- * - /admin/*    → only role='admin'  (from profiles table)
- * - /streamer/* → only role='streamer' AND not a manager
- * - /manager/*  → only users who have a row in managers table
- * - /login      → redirect to /streamer/login (convenience)
- *
- * Manager users have profiles.role='streamer' (enum limitation) but also
- * have a row in the managers table. We detect them by checking managers table.
+ * - /admin/*   → only role='admin'
+ * - /streamer/* → only streamers
+ * - /manager/* → only managers
+ * - /broker/*  → only brokers
+ * - /login     → unified login (redirect if already logged in)
  */
 
 const REF_COOKIE = 'ls_ref';
-const REF_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const REF_MAX_AGE = 60 * 60 * 24 * 30;
 const REF_RE = /^[a-z0-9_-]{3,32}$/i;
 
 function setRefCookie(res: NextResponse, ref: string) {
-  res.cookies.set({
-    name: REF_COOKIE,
-    value: ref,
-    maxAge: REF_MAX_AGE,
-    path: '/',
-    sameSite: 'lax',
-    httpOnly: false,
-  });
+  res.cookies.set({ name: REF_COOKIE, value: ref, maxAge: REF_MAX_AGE, path: '/', sameSite: 'lax', httpOnly: false });
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Pass current pathname downstream so layouts can read it.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-pathname', pathname);
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
 
-  // Capture ?ref= attribution
   const refParam = request.nextUrl.searchParams.get('ref');
-  const refToSet =
-    refParam && REF_RE.test(refParam) ? refParam.toLowerCase() : null;
+  const refToSet = refParam && REF_RE.test(refParam) ? refParam.toLowerCase() : null;
 
-  // Convenience redirect: /login → /streamer/login
-  if (pathname === '/login') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/streamer/login';
-    const r = NextResponse.redirect(url);
-    if (refToSet) setRefCookie(r, refToSet);
-    return r;
-  }
+  // Convenience redirect: /login → unified login page (handled by /login/page.tsx)
+  // Old /streamer/login still works for backwards compat
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -71,23 +53,23 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // Route classification
   const isAdminArea    = pathname.startsWith('/admin');
   const isAdminLogin   = pathname === '/admin/login';
   const isStreamerArea = pathname.startsWith('/streamer');
   const isStreamerAuth = pathname === '/streamer/login' || pathname === '/streamer/register';
   const isManagerArea  = pathname.startsWith('/manager');
   const isManagerLogin = pathname === '/manager/login';
+  const isBrokerArea   = pathname.startsWith('/broker');
+  const isBrokerLogin  = pathname === '/broker/login';
+  const isUnifiedLogin = pathname === '/login';
 
   // ── Unauthenticated guard ──────────────────────────────────────────────────
   if (!user) {
     if (isAdminArea && !isAdminLogin) {
       const url = request.nextUrl.clone();
-      url.pathname = '/admin/login';
+      url.pathname = '/login';
       url.searchParams.set('next', pathname);
       const r = NextResponse.redirect(url);
       if (refToSet) setRefCookie(r, refToSet);
@@ -95,7 +77,7 @@ export async function middleware(request: NextRequest) {
     }
     if (isStreamerArea && !isStreamerAuth) {
       const url = request.nextUrl.clone();
-      url.pathname = '/streamer/login';
+      url.pathname = '/login';
       url.searchParams.set('next', pathname);
       const r = NextResponse.redirect(url);
       if (refToSet) setRefCookie(r, refToSet);
@@ -103,7 +85,15 @@ export async function middleware(request: NextRequest) {
     }
     if (isManagerArea && !isManagerLogin) {
       const url = request.nextUrl.clone();
-      url.pathname = '/manager/login';
+      url.pathname = '/login';
+      url.searchParams.set('next', pathname);
+      const r = NextResponse.redirect(url);
+      if (refToSet) setRefCookie(r, refToSet);
+      return r;
+    }
+    if (isBrokerArea && !isBrokerLogin) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
       url.searchParams.set('next', pathname);
       const r = NextResponse.redirect(url);
       if (refToSet) setRefCookie(r, refToSet);
@@ -114,20 +104,26 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── Authenticated: resolve role ────────────────────────────────────────────
-  // 1. Check profiles table for admin/streamer role
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .maybeSingle();
 
-  const profileRole = profile?.role; // 'admin' | 'streamer' | null
+  const profileRole = profile?.role as string | undefined;
 
-  // 2. Check if this user is a manager (has a row in managers table)
-  //    Managers have profiles.role='streamer' due to enum limitation.
-  //    We must check managers table to distinguish them from real streamers.
+  // Check broker
+  let isBroker = false;
+  const { data: brokerRow } = await supabase
+    .from('brokers')
+    .select('id, status')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  isBroker = !!brokerRow;
+
+  // Check manager (only if not broker)
   let isManager = false;
-  if (profileRole === 'streamer') {
+  if (!isBroker && profileRole === 'streamer') {
     const { data: managerRow } = await supabase
       .from('managers')
       .select('id, status')
@@ -136,33 +132,33 @@ export async function middleware(request: NextRequest) {
     isManager = !!managerRow;
   }
 
-  // Effective role for routing
   const effectiveRole = profileRole === 'admin'
     ? 'admin'
-    : isManager
-      ? 'manager'
-      : 'streamer';
+    : isBroker
+      ? 'broker'
+      : isManager
+        ? 'manager'
+        : 'streamer';
+
+  // ── Unified login: redirect to correct area ────────────────────────────────
+  if (isUnifiedLogin || isAdminLogin || isManagerLogin || isBrokerLogin || isStreamerAuth) {
+    const dest = effectiveRole === 'admin' ? '/admin'
+      : effectiveRole === 'broker' ? '/broker'
+      : effectiveRole === 'manager' ? '/manager'
+      : '/streamer';
+    const url = request.nextUrl.clone();
+    url.pathname = dest;
+    url.search = '';
+    const r = NextResponse.redirect(url);
+    if (refToSet) setRefCookie(r, refToSet);
+    return r;
+  }
 
   // ── Admin area ─────────────────────────────────────────────────────────────
   if (isAdminArea) {
-    if (isAdminLogin) {
-      // Already logged in as admin → bounce to dashboard
-      if (effectiveRole === 'admin') {
-        const url = request.nextUrl.clone();
-        url.pathname = '/admin';
-        url.search = '';
-        const r = NextResponse.redirect(url);
-        if (refToSet) setRefCookie(r, refToSet);
-        return r;
-      }
-      // Non-admin on login page → let them see the login form (they'll fail auth)
-      if (refToSet) setRefCookie(response, refToSet);
-      return response;
-    }
-    // Protected admin pages
     if (effectiveRole !== 'admin') {
       const url = request.nextUrl.clone();
-      url.pathname = effectiveRole === 'manager' ? '/manager' : '/streamer/login';
+      url.pathname = effectiveRole === 'manager' ? '/manager' : effectiveRole === 'broker' ? '/broker' : '/streamer';
       url.search = '';
       const r = NextResponse.redirect(url);
       if (refToSet) setRefCookie(r, refToSet);
@@ -172,37 +168,9 @@ export async function middleware(request: NextRequest) {
 
   // ── Streamer area ──────────────────────────────────────────────────────────
   if (isStreamerArea) {
-    if (isStreamerAuth) {
-      // Already logged in → bounce to their area
-      if (effectiveRole === 'streamer') {
-        const url = request.nextUrl.clone();
-        url.pathname = '/streamer';
-        url.search = '';
-        const r = NextResponse.redirect(url);
-        if (refToSet) setRefCookie(r, refToSet);
-        return r;
-      }
-      if (effectiveRole === 'admin') {
-        const url = request.nextUrl.clone();
-        url.pathname = '/admin';
-        url.search = '';
-        const r = NextResponse.redirect(url);
-        if (refToSet) setRefCookie(r, refToSet);
-        return r;
-      }
-      if (effectiveRole === 'manager') {
-        const url = request.nextUrl.clone();
-        url.pathname = '/manager';
-        url.search = '';
-        const r = NextResponse.redirect(url);
-        if (refToSet) setRefCookie(r, refToSet);
-        return r;
-      }
-    }
-    // Protected streamer pages — managers must NOT access /streamer/*
     if (effectiveRole !== 'streamer') {
       const url = request.nextUrl.clone();
-      url.pathname = effectiveRole === 'admin' ? '/admin' : '/manager';
+      url.pathname = effectiveRole === 'admin' ? '/admin' : effectiveRole === 'broker' ? '/broker' : '/manager';
       url.search = '';
       const r = NextResponse.redirect(url);
       if (refToSet) setRefCookie(r, refToSet);
@@ -212,32 +180,21 @@ export async function middleware(request: NextRequest) {
 
   // ── Manager area ───────────────────────────────────────────────────────────
   if (isManagerArea) {
-    if (isManagerLogin) {
-      // Already logged in as manager → bounce to dashboard
-      if (effectiveRole === 'manager') {
-        const url = request.nextUrl.clone();
-        url.pathname = '/manager';
-        url.search = '';
-        const r = NextResponse.redirect(url);
-        if (refToSet) setRefCookie(r, refToSet);
-        return r;
-      }
-      if (effectiveRole === 'admin') {
-        const url = request.nextUrl.clone();
-        url.pathname = '/admin';
-        url.search = '';
-        const r = NextResponse.redirect(url);
-        if (refToSet) setRefCookie(r, refToSet);
-        return r;
-      }
-      // Non-manager on manager login → let them see the form
-      if (refToSet) setRefCookie(response, refToSet);
-      return response;
-    }
-    // Protected manager pages
     if (effectiveRole !== 'manager') {
       const url = request.nextUrl.clone();
-      url.pathname = effectiveRole === 'admin' ? '/admin' : '/manager/login';
+      url.pathname = effectiveRole === 'admin' ? '/admin' : effectiveRole === 'broker' ? '/broker' : '/login';
+      url.search = '';
+      const r = NextResponse.redirect(url);
+      if (refToSet) setRefCookie(r, refToSet);
+      return r;
+    }
+  }
+
+  // ── Broker area ────────────────────────────────────────────────────────────
+  if (isBrokerArea) {
+    if (effectiveRole !== 'broker') {
+      const url = request.nextUrl.clone();
+      url.pathname = effectiveRole === 'admin' ? '/admin' : effectiveRole === 'manager' ? '/manager' : '/login';
       url.search = '';
       const r = NextResponse.redirect(url);
       if (refToSet) setRefCookie(r, refToSet);

@@ -7,7 +7,7 @@
 | URL | Кто |
 |---|---|
 | `/streamer/register` | стример регистрируется сам |
-| `/streamer/login` | стример входит |
+| `/login` | стример входит |
 | `/admin/login` | админ входит (регистрация — только вручную) |
 
 ## 🎬 Регистрация стримера
@@ -65,7 +65,7 @@ values ('<id-из-auth.users>', 'admin@...', 'admin', 'Owner');
 
 ## 🔄 Восстановление пароля
 
-- На `/streamer/login` ссылка «Забыли пароль?»
+- На `/login` ссылка «Забыли пароль?»
 - POST `/api/auth/forgot-password` → `supabase.auth.resetPasswordForEmail(email, { redirectTo: '/auth/reset' })`.
 - Пользователь получает письмо со ссылкой → попадает на `/auth/reset` → вводит новый пароль → `supabase.auth.updateUser({ password })`.
 

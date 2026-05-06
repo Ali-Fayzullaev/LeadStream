@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export default function ManagerLoginRedirect() {
+export default function BrokerLoginRedirect() {
   redirect('/login');
 }

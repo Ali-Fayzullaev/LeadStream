@@ -15,7 +15,7 @@ export default function NotFound() {
             <Link href="/">На главную</Link>
           </Button>
           <Button asChild variant="ghost">
-            <Link href="/streamer/login">Вход для стримеров</Link>
+            <Link href="/login">Вход для стримеров</Link>
           </Button>
         </div>
       </div>

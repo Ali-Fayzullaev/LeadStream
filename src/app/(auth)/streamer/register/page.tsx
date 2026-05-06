@@ -153,7 +153,7 @@ export default function StreamerRegisterPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button className="w-full" onClick={() => router.replace('/streamer/login')}>
+          <Button className="w-full" onClick={() => router.replace('/login')}>
             Перейти к входу
           </Button>
         </CardContent>
@@ -362,7 +362,7 @@ export default function StreamerRegisterPage() {
           <p className="text-sm text-center text-muted-foreground">
             Уже есть аккаунт?{' '}
             <Link
-              href="/streamer/login"
+              href="/login"
               className="underline-offset-4 hover:underline text-foreground"
             >
               Войти
