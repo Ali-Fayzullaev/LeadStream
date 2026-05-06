@@ -1,11 +1,11 @@
 import { redirect } from 'next/navigation';
-import { AlertCircle, CheckCircle, Clock, Phone, MapPin } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
-import { StatusBadge } from '@/components/status-badge';
 import { OrderStatusUpdater } from '@/components/manager/order-status-updater';
+import { BrokerAssigner } from '@/components/manager/broker-assigner';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
 
@@ -19,8 +19,11 @@ export default async function ManagerDashboardPage() {
 
   if (!user) redirect('/manager/login');
 
+  // Use admin client to bypass RLS — we already verified user is authenticated above.
+  const admin = createAdminClient();
+
   // Get manager profile
-  const { data: manager } = await supabase
+  const { data: manager } = await admin
     .from('managers')
     .select('id, display_name, phone, status')
     .eq('user_id', user.id)
@@ -29,10 +32,19 @@ export default async function ManagerDashboardPage() {
   if (!manager) redirect('/manager/login');
   if (manager.status === 'blocked') redirect('/manager/blocked');
 
-  // Get manager's assigned orders
-  const { data: orders } = await supabase
+  // Manager's brokers (for resolving broker_name on each order)
+  const { data: brokers } = await admin
+    .from('brokers')
+    .select('id, display_name')
+    .eq('manager_id', manager.id);
+  const brokerNameMap = new Map(
+    (brokers ?? []).map((b) => [b.id as string, b.display_name as string]),
+  );
+
+  // Get manager's assigned orders (with streamer_name and city_name from view)
+  const { data: orders } = await admin
     .from('manager_orders')
-    .select('id, created_at, customer_name, customer_phone, amount, status, streamer_name')
+    .select('id, created_at, customer_name, customer_phone, amount, status, streamer_name, city_name, assigned_broker_id')
     .eq('assigned_manager_id', manager.id)
     .order('created_at', { ascending: false });
 
@@ -114,6 +126,7 @@ export default async function ManagerDashboardPage() {
                     <th className="text-left px-4 py-2 font-medium">Клиент</th>
                     <th className="text-left px-4 py-2 font-medium">Телефон</th>
                     <th className="text-left px-4 py-2 font-medium">От стримера</th>
+                    <th className="text-left px-4 py-2 font-medium">Брокер</th>
                     <th className="text-left px-4 py-2 font-medium">Сумма</th>
                     <th className="text-left px-4 py-2 font-medium">Статус</th>
                     <th className="text-left px-4 py-2 font-medium">Дата</th>
@@ -128,9 +141,13 @@ export default async function ManagerDashboardPage() {
                       color: st.color,
                     }));
 
+                    const brokerName = o.assigned_broker_id
+                      ? brokerNameMap.get(o.assigned_broker_id) ?? null
+                      : null;
+
                     return (
                       <tr key={o.id} className="border-t hover:bg-muted/50">
-                        <td className="px-4 py-2 font-medium">{o.customer_name}</td>
+                        <td className="px-4 py-2 font-medium">{o.customer_name ?? '—'}</td>
                         <td className="px-4 py-2 font-mono text-xs">
                           <a href={`tel:${o.customer_phone}`} className="text-primary hover:underline">
                             {o.customer_phone}
@@ -138,6 +155,14 @@ export default async function ManagerDashboardPage() {
                         </td>
                         <td className="px-4 py-2 text-sm text-muted-foreground">
                           {o.streamer_name ?? 'Прямой заход'}
+                        </td>
+                        <td className="px-4 py-2 text-sm">
+                          <BrokerAssigner
+                            orderId={o.id}
+                            currentBrokerId={o.assigned_broker_id ?? null}
+                            currentBrokerName={brokerName}
+                            brokers={brokers ?? []}
+                          />
                         </td>
                         <td className="px-4 py-2 font-semibold">{formatCurrency(Number(o.amount))}</td>
                         <td className="px-4 py-2">

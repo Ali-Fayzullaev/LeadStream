@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Phone, User, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Loader2, Phone, User, MapPin, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,13 +18,16 @@ interface OrderFormProps {
   disableAttribution?: boolean;
 }
 
+const NAME_MAX_LEN = 50;
+const PHONE_MAX_LEN = 20;
+
 function isValidPhone(phone: string): boolean {
   const digits = phone.replace(/\D/g, '');
   return digits.length >= 10 && digits.length <= 15;
 }
 
 function formatPhone(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
+  const digits = raw.replace(/\D/g, '').slice(0, 15);
   if (digits.length === 0) return '';
   if (digits.startsWith('7') || digits.startsWith('8')) {
     const d = digits.startsWith('8') ? '7' + digits.slice(1) : digits;
@@ -49,31 +52,37 @@ export function OrderForm({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [hp, setHp] = useState('');
 
-  // Step 1 fields
+  // Step 1
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
-  // Step 2 fields
+  // Step 2
   const [cityId, setCityId] = useState<string>('');
   const [cities, setCities] = useState<City[]>([]);
   const [citiesLoading, setCitiesLoading] = useState(true);
 
-  // Step: 1 = name+phone, 2 = city
   const [step, setStep] = useState<1 | 2>(1);
 
   useEffect(() => {
-    fetch('/api/cities')
+    fetch('/api/cities', { cache: 'no-store' })
       .then(r => r.json())
       .then((data: City[]) => {
-        setCities(data ?? []);
-        if (data?.length === 1) setCityId(data[0].id);
+        const list = Array.isArray(data) ? data : [];
+        console.log('[order-form] cities loaded:', list.length);
+        setCities(list);
       })
-      .catch(() => setCities([]))
+      .catch(err => {
+        console.error('[order-form] failed to load cities:', err);
+        setCities([]);
+      })
       .finally(() => setCitiesLoading(false));
   }, []);
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCustomerName(e.target.value.slice(0, NAME_MAX_LEN));
+  };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhone(e.target.value);
@@ -85,22 +94,24 @@ export function OrderForm({
     }
   };
 
-  // Step 1 → Step 2
+  // Step 1 → Step 2 (always go to city selection)
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
-    if (hp) { toast.success('Заявка отправлена'); return; }
-    if (!customerPhone.trim()) { setPhoneError('Номер телефона обязателен'); return; }
-    if (!isValidPhone(customerPhone)) { setPhoneError('Введите корректный номер'); return; }
+    setError(null);
 
-    // If no cities — skip step 2 and submit directly
-    if (!citiesLoading && cities.length === 0) {
-      submitOrder(null);
+    if (!customerPhone.trim()) {
+      setPhoneError('Номер телефона обязателен');
       return;
     }
+    if (!isValidPhone(customerPhone)) {
+      setPhoneError('Введите корректный номер (10–15 цифр)');
+      return;
+    }
+
     setStep(2);
   };
 
-  // Step 2 → Submit
+  // Step 2 → Submit (city is OPTIONAL — saves anyway as "unassigned")
   const handleStep2 = (e: React.FormEvent) => {
     e.preventDefault();
     submitOrder(cityId || null);
@@ -108,62 +119,69 @@ export function OrderForm({
 
   const submitOrder = (selectedCityId: string | null) => {
     start(async () => {
-      const payload: Record<string, unknown> = {
-        customerName: customerName.trim() || null,
-        customerPhone: customerPhone.trim(),
-        productName: defaultProductName ?? 'Заявка',
-        quantity: 1,
-        amount: defaultAmount ?? 0,
-        cityId: selectedCityId,
-      };
+      try {
+        setError(null);
 
-      if (!disableAttribution && refCode) {
-        payload.ref = refCode;
-      } else if (disableAttribution) {
-        payload._no_attribution = true;
-      }
+        const payload: Record<string, unknown> = {
+          customerName: customerName.trim() || null,
+          customerPhone: customerPhone.trim(),
+          productName: defaultProductName ?? 'Заявка',
+          quantity: 1,
+          amount: defaultAmount ?? 0,
+          cityId: selectedCityId,
+        };
 
-      const res = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = json?.error ?? 'Ошибка при отправке заявки';
+        if (!disableAttribution && refCode) {
+          payload.ref = refCode;
+        } else if (disableAttribution) {
+          payload._no_attribution = true;
+        }
+
+        console.log('[order-form] submitting:', payload);
+
+        const res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        console.log('[order-form] response:', res.status, json);
+
+        if (!res.ok) {
+          const msg = json?.error ?? `Ошибка ${res.status}`;
+          setError(msg);
+          toast.error(msg);
+          return;
+        }
+        toast.success('Заявка отправлена!');
+        router.push(`/thanks?id=${encodeURIComponent(json.id)}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Сетевая ошибка';
+        console.error('[order-form] exception:', err);
         setError(msg);
         toast.error(msg);
-        setStep(1);
-        return;
       }
-      toast.success('Заявка отправлена!');
-      router.push(`/thanks?id=${encodeURIComponent(json.id)}`);
     });
   };
 
   // ── Step 1: Name + Phone ───────────────────────────────────────────────────
   if (step === 1) {
     return (
-      <form onSubmit={handleStep1} className="space-y-5">
-        {/* Honeypot */}
-        <div aria-hidden className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden opacity-0">
-          <input type="text" tabIndex={-1} autoComplete="off" value={hp} onChange={e => setHp(e.target.value)} />
-        </div>
-
+      <form onSubmit={handleStep1} className="space-y-5" noValidate>
         {/* Name */}
         <div className="space-y-2">
           <Label htmlFor="customerName" className="flex items-center gap-1.5 text-sm font-medium">
             <User className="size-3.5 text-muted-foreground" />
             Ваше имя
-            <span className="text-muted-foreground font-normal text-xs">(необязательно)</span>
+            <span className="text-muted-foreground font-normal text-xs">(необязательно, до {NAME_MAX_LEN} симв.)</span>
           </Label>
           <Input
             id="customerName"
             autoComplete="name"
-            placeholder="Иван Иванов"
+            placeholder="Иван"
             value={customerName}
-            onChange={e => setCustomerName(e.target.value.slice(0, 50))}
-            maxLength={50}
+            onChange={handleNameChange}
+            maxLength={NAME_MAX_LEN}
             className="h-11"
           />
         </div>
@@ -178,21 +196,21 @@ export function OrderForm({
           <Input
             id="customerPhone"
             type="tel"
+            inputMode="tel"
             placeholder="+7 700 123 45 67"
             autoComplete="tel"
             value={customerPhone}
             onChange={handlePhoneChange}
+            maxLength={PHONE_MAX_LEN}
             required
             className="h-11"
           />
           {phoneError && (
-            <p className="text-xs text-destructive flex items-center gap-1">
-              {phoneError}
-            </p>
+            <p className="text-xs text-destructive">{phoneError}</p>
           )}
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive break-words">{error}</p>}
 
         <Button
           type="submit"
@@ -200,23 +218,23 @@ export function OrderForm({
           className="w-full h-12 text-base font-semibold gap-2"
           disabled={pending}
         >
-          {pending ? (
-            <Loader2 className="size-5 animate-spin" />
-          ) : (
-            <>
-              Далее
-              <ArrowRight className="size-4" />
-            </>
-          )}
+          Далее
+          <ArrowRight className="size-4" />
         </Button>
+
+        {streamerName && (
+          <p className="text-center text-xs text-muted-foreground">
+            Вас пригласил: <strong>{streamerName}</strong>
+          </p>
+        )}
       </form>
     );
   }
 
-  // ── Step 2: City ───────────────────────────────────────────────────────────
+  // ── Step 2: City (optional) ────────────────────────────────────────────────
   return (
-    <form onSubmit={handleStep2} className="space-y-5">
-      {/* Progress indicator */}
+    <form onSubmit={handleStep2} className="space-y-5" noValidate>
+      {/* Step indicator */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
         <CheckCircle2 className="size-4 text-emerald-500 shrink-0" />
         <span className="truncate">
@@ -225,8 +243,9 @@ export function OrderForm({
         <button
           type="button"
           onClick={() => setStep(1)}
-          className="ml-auto text-xs underline hover:text-foreground shrink-0"
+          className="ml-auto text-xs underline hover:text-foreground shrink-0 inline-flex items-center gap-1"
         >
+          <ArrowLeft className="size-3" />
           Изменить
         </button>
       </div>
@@ -240,6 +259,10 @@ export function OrderForm({
         </Label>
         {citiesLoading ? (
           <div className="h-11 rounded-md bg-muted animate-pulse" />
+        ) : cities.length === 0 ? (
+          <div className="h-11 rounded-md border border-input bg-muted/40 px-3 flex items-center text-sm text-muted-foreground">
+            Города ещё не настроены
+          </div>
         ) : (
           <select
             id="cityId"
@@ -247,18 +270,18 @@ export function OrderForm({
             onChange={e => setCityId(e.target.value)}
             className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <option value="">— Выберите город —</option>
+            <option value="">— Не выбран —</option>
             {cities.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
         )}
         <p className="text-xs text-muted-foreground">
-          Укажите город, чтобы мы быстрее связались с вами.
+          Указав город, мы быстрее свяжемся с вами. Можно отправить и без выбора.
         </p>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive break-words">{error}</p>}
 
       <Button
         type="submit"

@@ -11,6 +11,25 @@ import { Badge } from '@/components/ui/badge';
 
 interface City { id: string; name: string; slug: string; is_active: boolean; }
 
+// Transliterate Cyrillic to Latin for slug generation
+const CYRILLIC_MAP: Record<string, string> = {
+  а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'yo',ж:'zh',з:'z',и:'i',й:'y',
+  к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',ф:'f',
+  х:'kh',ц:'ts',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya',
+};
+function toSlug(str: string): string {
+  return str
+    .toLowerCase()
+    .split('')
+    .map(c => CYRILLIC_MAP[c] ?? c)
+    .join('')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    || 'city-' + Date.now();
+}
+
 async function fetchCities(): Promise<City[]> {
   const res = await fetch('/api/admin/cities');
   if (!res.ok) return [];
@@ -34,7 +53,7 @@ export function CitiesSection() {
     e.preventDefault();
     if (!newName.trim()) return;
     setAdding(true);
-    const slug = newName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const slug = toSlug(newName.trim());
     const res = await fetch('/api/admin/cities', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -58,35 +58,93 @@ export async function createManagerAction(email: string, displayName: string, ph
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = displayName.trim();
     const cleanPhone = (phone ?? '').trim();
-    if (!cleanEmail || !cleanName) throw new Error('Email and display name are required');
+    if (!cleanEmail || !cleanName) {
+      return { success: false as const, error: 'Email и ФИО обязательны' };
+    }
+
     const adminClient = createAdminClient();
-    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).toUpperCase().slice(-2) + String(Math.floor(10 + Math.random() * 90));
+
+    // Check if a manager with this email already exists
+    const { data: existing } = await adminClient
+      .from('managers')
+      .select('id')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+    if (existing) {
+      return { success: false as const, error: `Менеджер с email "${cleanEmail}" уже существует` };
+    }
+
+    // Generate temp password
+    const tempPassword =
+      Math.random().toString(36).slice(-8) +
+      Math.random().toString(36).toUpperCase().slice(-2) +
+      String(Math.floor(10 + Math.random() * 90));
+
+    // Step 1: Create auth user. user_metadata.role='manager' so handle_new_user
+    // doesn't auto-create a streamer profile (which would block manager creation).
     const { data: created, error: authError } = await adminClient.auth.admin.createUser({
       email: cleanEmail,
       password: tempPassword,
       email_confirm: true,
-      user_metadata: { role: 'streamer', full_name: cleanName, is_manager: true },
+      user_metadata: { role: 'manager', full_name: cleanName },
     });
-    if (authError || !created.user) throw new Error(authError?.message ?? 'Failed to create auth user');
+    if (authError || !created?.user) {
+      return {
+        success: false as const,
+        error: `Auth: ${authError?.message ?? 'не удалось создать пользователя'}`,
+      };
+    }
     const newUserId = created.user.id;
+
+    // Step 2: Best-effort cleanup — remove any auto-created streamer/profile
     await adminClient.from('streamers').delete().eq('user_id', newUserId);
-    const { error: dbError } = await adminClient.from('managers').insert({
+
+    // Step 3: Insert manager row. Build payload defensively — skip optional
+    // columns if they cause errors (e.g. column not yet migrated).
+    const baseRow: Record<string, unknown> = {
       user_id: newUserId,
       email: cleanEmail,
       display_name: cleanName,
-      phone: cleanPhone || null,
       status: 'active',
+    };
+    if (cleanPhone) baseRow.phone = cleanPhone;
+
+    const fullRow = {
+      ...baseRow,
       temp_password: tempPassword,
       city_id: cityId || null,
-    });
-    if (dbError) {
-      await adminClient.auth.admin.deleteUser(newUserId);
-      throw dbError;
+    };
+
+    let { error: dbError } = await adminClient.from('managers').insert(fullRow);
+
+    // If insert fails because of missing optional columns, retry with base row only
+    if (dbError && /column .* does not exist/i.test(dbError.message)) {
+      console.warn('[createManagerAction] retry with base columns:', dbError.message);
+      ({ error: dbError } = await adminClient.from('managers').insert(baseRow));
     }
+
+    if (dbError) {
+      // Rollback: delete auth user
+      await adminClient.auth.admin.deleteUser(newUserId).catch(() => {});
+      return {
+        success: false as const,
+        error: `DB: ${dbError.message}`,
+      };
+    }
+
     revalidatePath('/admin/managers');
-    return { success: true as const, managerId: newUserId, tempPassword, message: 'Manager created successfully' };
+    return {
+      success: true as const,
+      managerId: newUserId,
+      tempPassword,
+      message: 'Менеджер успешно создан',
+    };
   } catch (err) {
-    return { success: false as const, error: err instanceof Error ? err.message : 'Failed to create manager' };
+    console.error('[createManagerAction] exception:', err);
+    return {
+      success: false as const,
+      error: err instanceof Error ? err.message : 'Не удалось создать менеджера',
+    };
   }
 }
 
@@ -174,6 +232,76 @@ export async function autoDistributeUnassignedOrdersAction() {
     return { success: true as const, assigned: orders.length, message: `Распределено ${orders.length} заявок между ${managers.length} менеджерами` };
   } catch (err) {
     return { success: false as const, error: err instanceof Error ? err.message : 'Не удалось распределить заявки' };
+  }
+}
+
+/**
+ * Manager assigns/changes/clears the broker on one of their own orders.
+ * Authorization: order.assigned_manager_id must match the current user's manager.id.
+ */
+export async function assignBrokerToOrderAction(orderId: string, brokerId: string | null) {
+  try {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const adminClient = createAdminClient();
+
+    const { data: manager, error: mErr } = await adminClient
+      .from('managers')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (mErr) throw mErr;
+    if (!manager) throw new Error('Manager profile not found');
+    if (manager.status === 'blocked') throw new Error('Your account is blocked');
+
+    // Verify the order belongs to this manager
+    const { data: order, error: oErr } = await adminClient
+      .from('orders')
+      .select('id, assigned_manager_id')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (oErr) throw oErr;
+    if (!order) throw new Error('Order not found');
+    if (order.assigned_manager_id !== manager.id) {
+      throw new Error('Not authorized to update this order');
+    }
+
+    // If a broker is selected, verify it belongs to this manager
+    if (brokerId) {
+      const { data: broker, error: bErr } = await adminClient
+        .from('brokers')
+        .select('id, manager_id, status')
+        .eq('id', brokerId)
+        .maybeSingle();
+      if (bErr) throw bErr;
+      if (!broker) throw new Error('Broker not found');
+      if (broker.manager_id !== manager.id) {
+        throw new Error('This broker does not belong to you');
+      }
+      if (broker.status === 'blocked') {
+        throw new Error('This broker is blocked');
+      }
+    }
+
+    const { error: updErr } = await adminClient
+      .from('orders')
+      .update({
+        assigned_broker_id: brokerId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId);
+    if (updErr) throw updErr;
+
+    revalidatePath('/manager');
+    revalidatePath('/manager/orders');
+    return { success: true as const };
+  } catch (err) {
+    return {
+      success: false as const,
+      error: err instanceof Error ? err.message : 'Failed to assign broker',
+    };
   }
 }
 

@@ -16,6 +16,7 @@ export function CreateManagerForm() {
   const [phone, setPhone] = useState('');
   const [cityId, setCityId] = useState('');
   const [cities, setCities] = useState<City[]>([]);
+  const [citiesLoading, setCitiesLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -23,10 +24,17 @@ export function CreateManagerForm() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    fetch('/api/cities')
+    fetch('/api/cities', { cache: 'no-store' })
       .then(r => r.json())
-      .then((data: City[]) => setCities(data ?? []))
-      .catch(() => {});
+      .then((data: City[]) => {
+        console.log('[create-manager] cities loaded:', data);
+        setCities(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error('[create-manager] failed to load cities:', err);
+        setCities([]);
+      })
+      .finally(() => setCitiesLoading(false));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,20 +43,26 @@ export function CreateManagerForm() {
     setError('');
     setSuccess(false);
 
-    const result = await createManagerAction(email, displayName, phone, cityId || undefined);
+    try {
+      const result = await createManagerAction(email, displayName, phone, cityId || undefined);
+      console.log('[create-manager] result:', result);
 
-    if (result.success) {
-      setSuccess(true);
-      setTempPassword(result.tempPassword || '');
-      setEmail('');
-      setDisplayName('');
-      setPhone('');
-      setCityId('');
-    } else {
-      setError(result.error || 'Ошибка при создании менеджера');
+      if (result.success) {
+        setSuccess(true);
+        setTempPassword(result.tempPassword || '');
+        setEmail('');
+        setDisplayName('');
+        setPhone('');
+        setCityId('');
+      } else {
+        setError(result.error || 'Не удалось создать менеджера');
+      }
+    } catch (err) {
+      console.error('[create-manager] exception:', err);
+      setError(err instanceof Error ? err.message : 'Ошибка при создании менеджера');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const copyPassword = () => {
@@ -92,7 +106,7 @@ export function CreateManagerForm() {
       {error && (
         <Alert variant="destructive">
           <AlertCircle className="size-4" />
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="break-all">{error}</AlertDescription>
         </Alert>
       )}
 
@@ -111,23 +125,25 @@ export function CreateManagerForm() {
         <Input type="tel" placeholder="+7 (999) 123-45-67" value={phone} onChange={e => setPhone(e.target.value)} disabled={loading} />
       </div>
 
-      {cities.length > 0 && (
-        <div className="space-y-2">
-          <Label>Город</Label>
-          <select
-            value={cityId}
-            onChange={e => setCityId(e.target.value)}
-            disabled={loading}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <option value="">— Выберите город —</option>
-            {cities.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <p className="text-xs text-muted-foreground">Лиды из этого города будут автоматически назначаться этому менеджеру.</p>
-        </div>
-      )}
+      <div className="space-y-2">
+        <Label>Город {citiesLoading && <span className="text-xs text-muted-foreground">(загрузка...)</span>}</Label>
+        <select
+          value={cityId}
+          onChange={e => setCityId(e.target.value)}
+          disabled={loading || citiesLoading}
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="">— Без города —</option>
+          {cities.map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">
+          {cities.length > 0
+            ? `Доступно городов: ${cities.length}. Лиды из выбранного города будут назначаться этому менеджеру.`
+            : 'Городов нет. Добавьте города в Настройках.'}
+        </p>
+      </div>
 
       <Button className="w-full" disabled={loading}>
         {loading && <Loader2 className="mr-2 size-4 animate-spin" />}
