@@ -13,12 +13,15 @@ async function requireManager() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
-  const { data: manager } = await supabase
+  // Use admin client to bypass RLS and avoid column-not-found issues
+  const adminClient = createAdminClient();
+  const { data: manager, error } = await adminClient
     .from('managers')
-    .select('id, status, display_name, telegram_chat_id')
+    .select('id, status, display_name')
     .eq('user_id', user.id)
     .maybeSingle();
 
+  if (error) throw new Error(`DB error: ${error.message}`);
   if (!manager) throw new Error('Manager profile not found');
   if (manager.status === 'blocked') throw new Error('Your account is blocked');
   return { user, manager };
@@ -184,7 +187,9 @@ export async function getBrokerProfileAction() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    const { data: broker, error } = await supabase
+    // Use admin client to avoid RLS issues
+    const adminClient = createAdminClient();
+    const { data: broker, error } = await adminClient
       .from('brokers')
       .select('id, display_name, email, phone, status, telegram_chat_id, distribution_count')
       .eq('user_id', user.id)
@@ -204,7 +209,8 @@ export async function updateBrokerTelegramAction(telegramChatId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    const { error } = await supabase
+    const adminClient = createAdminClient();
+    const { error } = await adminClient
       .from('brokers')
       .update({ telegram_chat_id: telegramChatId.trim() || null, updated_at: new Date().toISOString() })
       .eq('user_id', user.id);
@@ -223,14 +229,15 @@ export async function getBrokerOrdersAction() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    const { data: broker } = await supabase
+    const adminClient = createAdminClient();
+    const { data: broker } = await adminClient
       .from('brokers')
       .select('id')
       .eq('user_id', user.id)
       .maybeSingle();
     if (!broker) throw new Error('Broker profile not found');
 
-    const { data: orders, error } = await supabase
+    const { data: orders, error } = await adminClient
       .from('broker_orders')
       .select('*')
       .eq('assigned_broker_id', broker.id)

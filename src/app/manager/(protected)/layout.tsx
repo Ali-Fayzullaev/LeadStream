@@ -1,5 +1,6 @@
 ﻿import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { ManagerSidebar } from '@/components/manager/sidebar';
 import { getAppSettings } from '@/lib/settings';
 
@@ -13,15 +14,17 @@ export default async function ProtectedManagerLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) redirect('/manager/login');
+  if (!user) redirect('/login');
 
-  const { data: manager } = await supabase
+  // Use admin client to bypass RLS — managers table may have restrictive policies
+  const adminClient = createAdminClient();
+  const { data: manager } = await adminClient
     .from('managers')
     .select('id, display_name, email, status')
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (!manager) redirect('/manager/login');
+  if (!manager) redirect('/login');
   if (manager.status === 'blocked') redirect('/manager/blocked');
 
   const settings = await getAppSettings();

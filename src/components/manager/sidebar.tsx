@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Users,
+  Settings,
   Menu,
   X,
   LogOut,
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { href: '/manager', label: 'Мои заявки', icon: LayoutDashboard, exact: true },
   { href: '/manager/orders', label: 'Все заказы', icon: ShoppingCart },
   { href: '/manager/brokers', label: 'Мои брокеры', icon: Users },
+  { href: '/manager/settings', label: 'Настройки', icon: Settings },
 ];
 
 const STORAGE_KEY = 'leadstream:manager-sidebar-collapsed';

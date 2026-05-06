@@ -1,10 +1,11 @@
 import Link from 'next/link';
-import { Download } from 'lucide-react';
+import { Download, AlertTriangle } from 'lucide-react';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/page-header';
 import { OrdersTable, type OrderRow } from '@/components/admin/orders-table';
 import { AutoDistributeButton } from '@/components/admin/auto-distribute-button';
@@ -21,6 +22,7 @@ interface SP {
   q?: string;
   from?: string;
   to?: string;
+  tab?: string;
 }
 
 export default async function AdminOrdersPage({ searchParams }: { searchParams: SP }) {
@@ -28,15 +30,27 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   const page = Math.max(1, Number(searchParams?.page ?? 1) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
+  const tab = searchParams?.tab ?? 'all'; // 'all' | 'unassigned'
+
+  // Count unassigned (no city or no manager)
+  const { count: unassignedCount } = await admin
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .is('assigned_manager_id', null);
 
   let query = admin
     .from('orders')
     .select(
-      'id, customer_name, customer_phone, product_name, quantity, amount, status, ref_code_snapshot, streamer_id, created_at',
+      'id, customer_name, customer_phone, product_name, quantity, amount, status, ref_code_snapshot, streamer_id, city_id, assigned_manager_id, created_at',
       { count: 'exact' },
     )
     .order('created_at', { ascending: false })
     .range(from, to);
+
+  // Tab filter
+  if (tab === 'unassigned') {
+    query = query.is('assigned_manager_id', null);
+  }
 
   if (searchParams?.status && searchParams.status !== '') {
     query = query.eq('status', searchParams.status);
@@ -51,7 +65,6 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   if (searchParams?.from) query = query.gte('created_at', searchParams.from);
   if (searchParams?.to) query = query.lte('created_at', `${searchParams.to}T23:59:59`);
 
-  // Streamers list — used for both the filter dropdown and name lookup.
   const [{ data: rawRows, count }, { data: streamers }, statuses] = await Promise.all([
     query,
     admin
@@ -78,6 +91,8 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     status: OrderRow['status'];
     ref_code_snapshot: string | null;
     streamer_id: string | null;
+    city_id: string | null;
+    assigned_manager_id: string | null;
     created_at: string;
   };
 
@@ -98,7 +113,6 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Build export URL preserving filters.
   const exportParams = new URLSearchParams();
   for (const [k, v] of Object.entries(searchParams ?? {})) {
     if (k !== 'page' && v) exportParams.set(k, v);
@@ -108,14 +122,14 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Заказы"
-        description={`${total} заказов найдено.`}
+        title="Заявки"
+        description={`${total} заявок найдено.`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <AutoDistributeButton />
             <Button asChild variant="outline">
               <a href={exportHref}>
-                <Download className="size-4" />
+                <Download className="size-4 mr-2" />
                 Export XLSX
               </a>
             </Button>
@@ -123,12 +137,58 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         }
       />
 
+      {/* Tabs */}
+      <div className="flex gap-1 border-b">
+        <Link
+          href="/admin/orders"
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            tab === 'all'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Все заявки
+        </Link>
+        <Link
+          href="/admin/orders?tab=unassigned"
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+            tab === 'unassigned'
+              ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <AlertTriangle className="size-3.5" />
+          Неопределённые
+          {(unassignedCount ?? 0) > 0 && (
+            <Badge className="bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs px-1.5 py-0">
+              {unassignedCount}
+            </Badge>
+          )}
+        </Link>
+      </div>
+
+      {tab === 'unassigned' && (
+        <div className="rounded-lg bg-orange-500/5 border border-orange-500/20 p-4 flex items-start gap-3">
+          <AlertTriangle className="size-5 text-orange-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-orange-700 dark:text-orange-400">
+              Неопределённые заявки
+            </p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Эти заявки не были назначены менеджеру — клиент не выбрал город или город не совпал ни с одним менеджером.
+              Вы можете назначить их вручную или использовать «Авто-распределение».
+            </p>
+          </div>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Фильтры</CardTitle>
         </CardHeader>
         <CardContent>
           <form method="get" className="grid gap-3 md:grid-cols-5">
+            {tab !== 'all' && <input type="hidden" name="tab" value={tab} />}
             <select name="status" defaultValue={searchParams?.status ?? ''}
                     className="h-10 rounded-md border border-input bg-background px-3 text-sm">
               <option value="">Любой статус</option>
@@ -149,7 +209,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
             <div className="md:col-span-5 flex gap-2">
               <Button type="submit">Применить</Button>
               <Button type="button" variant="ghost" asChild>
-                <Link href="/admin/orders">Сбросить</Link>
+                <Link href={tab === 'unassigned' ? '/admin/orders?tab=unassigned' : '/admin/orders'}>
+                  Сбросить
+                </Link>
               </Button>
             </div>
           </form>

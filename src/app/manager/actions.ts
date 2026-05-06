@@ -96,14 +96,15 @@ export async function listManagersAction() {
     const adminClient = createAdminClient();
     const { data: managers, error } = await adminClient
       .from('managers')
-      .select('id, user_id, display_name, email, phone, status, distribution_count, temp_password, created_at, updated_at')
+      .select('id, user_id, display_name, email, phone, status, distribution_count, temp_password, created_at, updated_at, city_id, cities(name)')
       .order('created_at', { ascending: false });
     if (error) throw error;
     const list = managers ?? [];
     const withCounts = await Promise.all(
       list.map(async (m) => {
         const { count } = await adminClient.from('orders').select('id', { count: 'exact', head: true }).eq('assigned_manager_id', m.id).not('status', 'in', '(completed,cancelled)');
-        return { ...m, activeOrders: count ?? 0 };
+        const cityName = (m.cities as { name?: string } | null)?.name ?? null;
+        return { ...m, activeOrders: count ?? 0, city_name: cityName };
       }),
     );
     return { success: true as const, managers: withCounts };
