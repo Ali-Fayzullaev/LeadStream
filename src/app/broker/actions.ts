@@ -223,6 +223,57 @@ export async function updateBrokerTelegramAction(telegramChatId: string) {
   }
 }
 
+/**
+ * Broker updates the status of one of their assigned leads.
+ * Authorization: order.assigned_broker_id must match the current user's broker.id.
+ */
+export async function updateBrokerOrderStatusAction(orderId: string, newStatus: string) {
+  try {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const adminClient = createAdminClient();
+
+    const { data: broker, error: bErr } = await adminClient
+      .from('brokers')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (bErr) throw bErr;
+    if (!broker) throw new Error('Broker profile not found');
+    if (broker.status === 'blocked') throw new Error('Your account is blocked');
+
+    // Verify the order is assigned to this broker
+    const { data: order, error: oErr } = await adminClient
+      .from('orders')
+      .select('id, assigned_broker_id')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (oErr) throw oErr;
+    if (!order) throw new Error('Order not found');
+    if (order.assigned_broker_id !== broker.id) {
+      throw new Error('Not authorized to update this order');
+    }
+
+    const { error: updErr } = await adminClient
+      .from('orders')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', orderId);
+    if (updErr) throw updErr;
+
+    revalidatePath('/broker');
+    revalidatePath('/manager');
+    revalidatePath('/manager/orders');
+    return { success: true as const };
+  } catch (err) {
+    return {
+      success: false as const,
+      error: err instanceof Error ? err.message : 'Failed to update order status',
+    };
+  }
+}
+
 export async function getBrokerOrdersAction() {
   try {
     const supabase = createClient();

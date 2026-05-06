@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Loader2, UserCheck, UserX, ChevronDown } from 'lucide-react';
@@ -27,6 +28,41 @@ export function BrokerAssigner({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  const [mounted, setMounted] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Ждём монтирования компонента на клиенте для портала
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Обновляем позицию при открытии или ресайзе окна
+  useEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      if (buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect();
+        setPosition({
+          top: rect.bottom + window.scrollY + 4, // +4px отступа
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      }
+    };
+
+    updatePosition();
+
+    // Обновляем позицию при скролле или ресайзе
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [open]);
 
   const handleSelect = (brokerId: string | null) => {
     if (brokerId === (currentBrokerId ?? null)) {
@@ -45,9 +81,12 @@ export function BrokerAssigner({
     });
   };
 
+  const handleClose = () => setOpen(false);
+
   return (
     <div className="relative inline-block">
       <button
+        ref={buttonRef}
         type="button"
         disabled={pending}
         onClick={() => setOpen((v) => !v)}
@@ -73,16 +112,25 @@ export function BrokerAssigner({
         <ChevronDown className="size-3 opacity-60" />
       </button>
 
-      {open && (
+      {/* Рендерим портал только на клиенте */}
+      {open && mounted && createPortal(
         <>
-          {/* Click-outside backdrop */}
+          {/* Бэкдроп для клика вне */}
           <div
             className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
             aria-hidden="true"
           />
-          {/* Dropdown */}
-          <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-md border bg-popover p-1 shadow-md">
+          
+          {/* Выпадающее меню */}
+          <div
+            className="fixed z-50 mt-1 min-w-[180px] rounded-md border bg-popover p-1 shadow-md"
+            style={{
+              top: position.top,
+              left: position.left,
+              minWidth: Math.max(position.width, 180),
+            }}
+          >
             {brokers.length === 0 ? (
               <div className="px-3 py-2 text-xs text-muted-foreground">
                 У вас нет брокеров.
@@ -101,7 +149,9 @@ export function BrokerAssigner({
                     Снять брокера
                   </button>
                 )}
-                <div className="my-1 h-px bg-border" />
+                
+                {currentBrokerId && <div className="my-1 h-px bg-border" />}
+                
                 {brokers.map((b) => (
                   <button
                     key={b.id}
@@ -114,14 +164,17 @@ export function BrokerAssigner({
                     <UserCheck className="size-3.5" />
                     {b.display_name}
                     {b.id === currentBrokerId && (
-                      <span className="ml-auto text-[10px] text-muted-foreground">текущий</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">
+                        текущий
+                      </span>
                     )}
                   </button>
                 ))}
               </>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
