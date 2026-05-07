@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import {
   updateStreamerProfileSchema,
   tiktokUsernameSchema,
@@ -9,6 +10,73 @@ import {
 } from '@/lib/validations';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Sends a test Telegram message to the streamer's saved telegram_chat_id.
+ * Detects "user never started the bot" and returns a helpful message.
+ */
+export async function sendTestTelegramToStreamerAction(): Promise<ActionResult> {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not authenticated' };
+
+  const admin = createAdminClient();
+  const { data: streamer } = await admin
+    .from('streamers')
+    .select('display_name, telegram_chat_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!streamer) return { ok: false, error: 'Профиль стримера не найден' };
+  if (!streamer.telegram_chat_id) {
+    return {
+      ok: false,
+      error:
+        'Сначала сохраните Telegram ID. После этого откройте @lead300426_bot и нажмите Start.',
+    };
+  }
+
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return { ok: false, error: 'Бот не настроен' };
+
+  const html = [
+    '✅ <b>Тестовое уведомление</b>',
+    `Привет, <b>${streamer.display_name}</b>!`,
+    'Если вы это видите — уведомления настроены правильно.',
+    'Теперь вы будете получать новые заявки прямо сюда.',
+  ].join('\n');
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: streamer.telegram_chat_id,
+        text: html,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      description?: string;
+    };
+    if (!res.ok || !data.ok) {
+      const desc = data.description ?? 'Telegram отклонил сообщение';
+      if (/blocked|deactivated|chat not found|can't initiate/i.test(desc)) {
+        return {
+          ok: false,
+          error:
+            'Бот не может вам написать. Откройте @lead300426_bot в Telegram и нажмите Start, затем повторите.',
+        };
+      }
+      return { ok: false, error: desc };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Network error' };
+  }
+}
 
 export async function updateStreamerProfileAction(input: UpdateStreamerProfileInput): Promise<ActionResult> {
   const parsed = updateStreamerProfileSchema.safeParse(input);
