@@ -198,6 +198,25 @@ export async function adminCreateStreamerAction(input: AdminCreateStreamerInput)
   return { ok: true };
 }
 
+export async function adminDeleteStreamerAction(id: string): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
+  const admin = createAdminClient();
+
+  const { data: streamer, error: streamerErr } = await admin
+    .from('streamers')
+    .select('user_id')
+    .eq('id', id)
+    .maybeSingle();
+  if (streamerErr) return { ok: false, error: streamerErr.message };
+  if (!streamer) return { ok: false, error: 'Стример не найден' };
+
+  const { error } = await admin.auth.admin.deleteUser(streamer.user_id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/admin', 'layout');
+  return { ok: true };
+}
+
 export async function adminDeleteOrderAction(id: string): Promise<ActionResult> {
   if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
   const admin = createAdminClient();

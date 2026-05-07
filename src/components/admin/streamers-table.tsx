@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
-import { adminUpdateStreamerAction } from '@/app/admin/actions';
+import { adminDeleteStreamerAction, adminUpdateStreamerAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
 
 export interface StreamerRow {
@@ -69,6 +69,8 @@ function StreamerRowView({ row, appUrl }: { row: StreamerRow; appUrl: string }) 
     status: row.status,
   });
 
+  const [deleting, startDelete] = useTransition();
+
   const update = (patch: Partial<typeof draft>) => {
     start(async () => {
       const res = await adminUpdateStreamerAction(row.id, patch);
@@ -78,6 +80,19 @@ function StreamerRowView({ row, appUrl }: { row: StreamerRow; appUrl: string }) 
       }
       toast.success('Сохранено');
       setEditing(false);
+      router.refresh();
+    });
+  };
+
+  const remove = () => {
+    if (!confirm('Удалить стримера? Это действие необратимо.')) return;
+    startDelete(async () => {
+      const res = await adminDeleteStreamerAction(row.id);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success('Стример удалён');
       router.refresh();
     });
   };
@@ -160,21 +175,24 @@ function StreamerRowView({ row, appUrl }: { row: StreamerRow; appUrl: string }) 
         ) : (
           <div className="flex justify-end gap-1">
             {row.status === 'pending' && (
-              <Button size="sm" variant="outline" onClick={() => update({ status: 'active' })} disabled={pending}>
+              <Button size="sm" variant="outline" onClick={() => update({ status: 'active' })} disabled={pending || deleting}>
                 Одобрить
               </Button>
             )}
             {row.status === 'active' && (
-              <Button size="sm" variant="ghost" onClick={() => update({ status: 'blocked' })} disabled={pending}>
+              <Button size="sm" variant="ghost" onClick={() => update({ status: 'blocked' })} disabled={pending || deleting}>
                 Заблокировать
               </Button>
             )}
             {row.status === 'blocked' && (
-              <Button size="sm" variant="outline" onClick={() => update({ status: 'active' })} disabled={pending}>
+              <Button size="sm" variant="outline" onClick={() => update({ status: 'active' })} disabled={pending || deleting}>
                 Разблокировать
               </Button>
             )}
-            <Button size="icon" variant="ghost" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="destructive" onClick={remove} disabled={pending || deleting}>
+              {deleting ? <Loader2 className="size-4 animate-spin" /> : 'Удалить'}
+            </Button>
+            <Button size="icon" variant="ghost" onClick={() => setEditing(true)} disabled={pending || deleting}>
               <Pencil className="size-4" />
             </Button>
           </div>
