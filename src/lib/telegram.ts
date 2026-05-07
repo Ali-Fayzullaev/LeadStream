@@ -87,6 +87,9 @@ export interface OrderNotificationPayload {
   amount: number;
   streamerName?: string | null;
   refCode?: string | null;
+  cityName?: string | null;
+  managerName?: string | null;
+  brokerName?: string | null;
 }
 
 export function buildOrderNotificationHtml(o: OrderNotificationPayload): string {
@@ -97,6 +100,18 @@ export function buildOrderNotificationHtml(o: OrderNotificationPayload): string 
     `📦 <b>Товар:</b> ${escapeHtml(o.productName)} × ${o.quantity}`,
     `💵 <b>Сумма:</b> ${formatTng(o.amount)}`,
   ];
+  // City: very important for routing visibility
+  if (o.cityName) {
+    lines.push(`🏙 <b>Город:</b> ${escapeHtml(o.cityName)}`);
+  } else {
+    lines.push('🏙 <i>Город не указан — требуется ручное распределение</i>');
+  }
+  if (o.managerName) {
+    lines.push(`👨‍💼 <b>Менеджер:</b> ${escapeHtml(o.managerName)}`);
+  }
+  if (o.brokerName) {
+    lines.push(`🤝 <b>Брокер:</b> ${escapeHtml(o.brokerName)}`);
+  }
   if (o.streamerName || o.refCode) {
     lines.push(
       `🎬 <b>Стример:</b> ${escapeHtml(o.streamerName ?? '—')} (<code>${escapeHtml(o.refCode ?? '—')}</code>)`,

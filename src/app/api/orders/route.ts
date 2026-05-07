@@ -185,9 +185,12 @@ export async function POST(request: NextRequest) {
     amount,
     streamerName,
     refCode: refSnapshot,
+    cityName,
+    managerName: assignedManagerName,
+    brokerName: assignedBrokerName,
   };
 
-  // Admin channel
+  // Admin channel — now includes city / manager / broker for full context
   void sendTelegramMessage(buildOrderNotificationHtml(notifPayload));
 
   // Streamer personal
