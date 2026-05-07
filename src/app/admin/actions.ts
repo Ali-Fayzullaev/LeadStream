@@ -226,6 +226,90 @@ export async function adminDeleteOrderAction(id: string): Promise<ActionResult> 
   return { ok: true };
 }
 
+/**
+ * Admin updates order city and auto-assigns to manager.
+ * If cityId is provided, finds the best manager for that city and assigns them.
+ * If cityId is null, clears the assignment.
+ */
+export async function adminUpdateOrderCityAction(
+  id: string,
+  cityId: string | null,
+): Promise<ActionResult> {
+  if (!(await requireAdmin())) return { ok: false, error: 'Forbidden' };
+  const admin = createAdminClient();
+
+  // Get order details
+  const { data: order, error: getErr } = await admin
+    .from('orders')
+    .select('customer_name, customer_phone, city_id, assigned_manager_id')
+    .eq('id', id)
+    .maybeSingle();
+  if (getErr || !order) return { ok: false, error: 'Order not found' };
+
+  // Update city and manager
+  let newManagerId: string | null = null;
+  let newManagerName: string | null = null;
+  let newManagerTgId: string | null = null;
+
+  if (cityId) {
+    // Find active manager with least distribution_count for this city
+    const { data: managers } = await admin
+      .from('managers')
+      .select('id, display_name, telegram_chat_id, distribution_count')
+      .eq('city_id', cityId)
+      .eq('status', 'active')
+      .order('distribution_count', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const mgr = managers?.[0];
+    if (mgr) {
+      newManagerId = mgr.id;
+      newManagerName = mgr.display_name;
+      newManagerTgId = mgr.telegram_chat_id ?? null;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const { error: updateErr } = await admin
+    .from('orders')
+    .update({
+      city_id: cityId,
+      assigned_manager_id: newManagerId,
+      updated_at: now,
+    })
+    .eq('id', id);
+
+  if (updateErr) return { ok: false, error: updateErr.message };
+
+  // If manager assigned, notify and increment distribution_count
+  if (newManagerId && newManagerName && newManagerTgId) {
+    // Increment manager's distribution_count
+    const { data: mgr } = await admin
+      .from('managers')
+      .select('distribution_count')
+      .eq('id', newManagerId)
+      .maybeSingle();
+    const newCount = ((mgr?.distribution_count as number) ?? 0) + 1;
+    await admin
+      .from('managers')
+      .update({ distribution_count: newCount, updated_at: now })
+      .eq('id', newManagerId);
+
+    // Send Telegram notification
+    void sendTelegramMessage(
+      `<b>📌 Новая заявка назначена вам!</b>\n\n` +
+      `<b>Клиент:</b> ${order.customer_name}\n` +
+      `<b>Телефон:</b> <code>${order.customer_phone}</code>\n` +
+      `<b>Заявка ID:</b> <code>${id.slice(0, 8)}</code>`,
+      newManagerTgId,
+    );
+  }
+
+  revalidatePath('/admin/orders', 'page');
+  return { ok: true };
+}
+
 // ============================================================================
 // Admin profile / password
 // ============================================================================

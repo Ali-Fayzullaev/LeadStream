@@ -65,12 +65,16 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   if (searchParams?.from) query = query.gte('created_at', searchParams.from);
   if (searchParams?.to) query = query.lte('created_at', `${searchParams.to}T23:59:59`);
 
-  const [{ data: rawRows, count }, { data: streamers }, statuses] = await Promise.all([
+  const [{ data: rawRows, count }, { data: streamers }, { data: cities }, statuses] = await Promise.all([
     query,
     admin
       .from('streamers')
       .select('id, display_name, ref_code, avatar_url')
       .order('display_name', { ascending: true }),
+    admin
+      .from('cities')
+      .select('id, name')
+      .order('name', { ascending: true }),
     getOrderStatuses(),
   ]);
 
@@ -79,6 +83,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   );
   const streamerAvatarMap = new Map(
     (streamers ?? []).map((s) => [s.id, (s as { avatar_url?: string | null }).avatar_url ?? null]),
+  );
+  const cityNameMap = new Map(
+    (cities ?? []).map((c) => [c.id, c.name]),
   );
 
   type Raw = {
@@ -108,6 +115,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     streamer_avatar: r.streamer_id ? (streamerAvatarMap.get(r.streamer_id) ?? null) : null,
     ref_code_snapshot: r.ref_code_snapshot,
     created_at: r.created_at,
+    city_id: r.city_id,
+    city_name: r.city_id ? (cityNameMap.get(r.city_id) ?? null) : null,
+    is_assigned: r.assigned_manager_id !== null,
   }));
 
   const total = count ?? 0;
@@ -218,7 +228,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         </CardContent>
       </Card>
 
-      <OrdersTable rows={rows} statuses={statuses} />
+      <OrdersTable rows={rows} statuses={statuses} cities={cities ?? []} />
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">

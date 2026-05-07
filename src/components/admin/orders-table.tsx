@@ -3,13 +3,13 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Trash2, PackageSearch, ChevronDown } from 'lucide-react';
+import { Loader2, Trash2, PackageSearch, ChevronDown, MapPin } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
-import { adminUpdateOrderStatusAction, adminDeleteOrderAction } from '@/app/admin/actions';
+import { adminUpdateOrderStatusAction, adminDeleteOrderAction, adminUpdateOrderCityAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
 
 export interface OrderRow {
@@ -24,6 +24,14 @@ export interface OrderRow {
   streamer_avatar: string | null;
   ref_code_snapshot: string | null;
   created_at: string;
+  city_id: string | null;
+  city_name: string | null;
+  is_assigned: boolean;
+}
+
+export interface City {
+  id: string;
+  name: string;
 }
 
 export interface StatusOption {
@@ -32,7 +40,7 @@ export interface StatusOption {
   color: string;
 }
 
-export function OrdersTable({ rows, statuses }: { rows: OrderRow[]; statuses: StatusOption[] }) {
+export function OrdersTable({ rows, statuses, cities }: { rows: OrderRow[]; statuses: StatusOption[]; cities: City[] }) {
   return (
     <div className="overflow-x-auto rounded-lg border">
       <table className="w-full text-sm">
@@ -42,13 +50,14 @@ export function OrdersTable({ rows, statuses }: { rows: OrderRow[]; statuses: St
             <th className="text-left px-4 py-2 font-medium">Клиент</th>
             <th className="text-left px-4 py-2 font-medium">Телефон</th>
             <th className="text-left px-4 py-2 font-medium">Стример</th>
+            <th className="text-left px-4 py-2 font-medium">Город</th>
             <th className="text-left px-4 py-2 font-medium">Статус</th>
             <th className="text-right px-4 py-2 font-medium" />
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <OrderRowView key={r.id} row={r} statuses={statuses} />
+            <OrderRowView key={r.id} row={r} statuses={statuses} cities={cities} />
           ))}
         </tbody>
       </table>
@@ -63,11 +72,27 @@ export function OrdersTable({ rows, statuses }: { rows: OrderRow[]; statuses: St
   );
 }
 
-function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption[] }) {
+function OrderRowView({ row, statuses, cities }: { row: OrderRow; statuses: StatusOption[]; cities: City[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [status, setStatus] = useState<string>(row.status);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cityId, setCityId] = useState<string>(row.city_id ?? '');
+
+  const changeCity = (newCityId: string) => {
+    const selected = newCityId ? newCityId : null;
+    setCityId(newCityId);
+    start(async () => {
+      const res = await adminUpdateOrderCityAction(row.id, selected);
+      if (!res.ok) {
+        setCityId(row.city_id ?? '');
+        toast.error(res.error);
+        return;
+      }
+      toast.success('Город обновлён, менеджер назначен');
+      router.refresh();
+    });
+  };
 
   const change = (next: string) => {
     setStatus(next);
@@ -121,6 +146,15 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
         )}
       </td>
       <td className="px-4 py-2">
+        <CitySelect
+          value={cityId}
+          cities={cities}
+          onChange={changeCity}
+          pending={pending}
+          isUndefined={!row.city_id}
+        />
+      </td>
+      <td className="px-4 py-2">
         <StatusSelect
           value={status}
           statuses={statuses}
@@ -150,6 +184,62 @@ function OrderRowView({ row, statuses }: { row: OrderRow; statuses: StatusOption
         />
       </td>
     </tr>
+  );
+}
+
+/**
+ * City selector: shows city name if assigned, or orange "Undefined" badge if not.
+ * Clicking opens a dropdown to select a city.
+ */
+function CitySelect({
+  value,
+  cities,
+  onChange,
+  pending,
+  isUndefined,
+}: {
+  value: string;
+  cities: City[];
+  onChange: (cityId: string) => void;
+  pending: boolean;
+  isUndefined: boolean;
+}) {
+  const selectedCity = cities.find((c) => c.id === value);
+  const label = selectedCity?.name ?? (isUndefined ? 'Неопределённая' : '—');
+  const isOrange = isUndefined;
+
+  return (
+    <div
+      className={`relative inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium cursor-pointer transition-opacity ${
+        isOrange
+          ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20'
+          : 'border border-muted'
+      }`}
+      style={{
+        opacity: pending ? 0.6 : 1,
+      }}
+    >
+      {pending ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : (
+        <MapPin className="size-3 opacity-60" />
+      )}
+      <span className="pointer-events-none">{label}</span>
+      <ChevronDown className="size-3 pointer-events-none opacity-60" />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={pending}
+        className="absolute inset-0 cursor-pointer opacity-0"
+      >
+        <option value="">— Выбрать город —</option>
+        {cities.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
