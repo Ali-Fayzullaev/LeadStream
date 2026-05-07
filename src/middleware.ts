@@ -20,6 +20,32 @@ function setRefCookie(res: NextResponse, ref: string) {
 }
 
 /**
+ * Wipe every Supabase auth cookie. Used when refresh-token is invalid so the
+ * browser doesn't keep retrying with the rotten token forever.
+ */
+function clearSupabaseAuthCookies(req: NextRequest, res: NextResponse) {
+  for (const c of req.cookies.getAll()) {
+    if (c.name.startsWith('sb-') || c.name.includes('-auth-token')) {
+      res.cookies.set({ name: c.name, value: '', maxAge: 0, path: '/' });
+    }
+  }
+}
+
+/**
+ * Detects "Invalid Refresh Token" / "Refresh Token Not Found" type errors.
+ * Treats any AuthApiError with status 400/401 the same way.
+ */
+function isAuthRefreshError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { status?: number; message?: string; name?: string };
+  if (e.status === 400 || e.status === 401) return true;
+  if (typeof e.message === 'string') {
+    return /refresh.*token|invalid.*token|jwt|session/i.test(e.message);
+  }
+  return false;
+}
+
+/**
  * Query Supabase REST API directly using service_role key.
  * Works in both Edge and Node.js runtimes.
  */
@@ -83,7 +109,30 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Try to read the user. If the refresh-token is dead/missing we MUST not
+  // throw — clear cookies and treat as anonymous so the browser stops retrying.
+  let user: { id: string } | null = null;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      if (isAuthRefreshError(error)) {
+        clearSupabaseAuthCookies(request, response);
+      } else {
+        // Non-auth errors are logged but we still continue as anonymous.
+        console.error('[middleware] supabase.auth.getUser error:', error.message);
+      }
+      user = null;
+    } else {
+      user = data.user ?? null;
+    }
+  } catch (err) {
+    if (isAuthRefreshError(err)) {
+      clearSupabaseAuthCookies(request, response);
+    } else {
+      console.error('[middleware] unexpected auth error:', err);
+    }
+    user = null;
+  }
 
   const isAdminArea    = pathname.startsWith('/admin');
   const isAdminLogin   = pathname === '/admin/login';

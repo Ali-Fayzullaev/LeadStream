@@ -3,6 +3,9 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { getAppSettings } from '@/lib/settings';
+// Side-effect import: install global unhandledRejection / uncaughtException
+// handlers so a stale Supabase refresh-token doesn't crash the Node process.
+import '@/lib/process-handlers';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 

@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { listMyBrokersAction } from '@/app/broker/actions';
 import { CreateBrokerForm } from '@/components/manager/create-broker-form';
+import { BrokerActions } from '@/components/manager/broker-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,11 +56,12 @@ export default async function ManagerBrokersPage() {
                     <th className="text-center px-4 py-2 font-medium">Активных лидов</th>
                     <th className="text-center px-4 py-2 font-medium">Telegram</th>
                     <th className="text-center px-4 py-2 font-medium">Статус</th>
+                    <th className="text-right px-4 py-2 font-medium w-12"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {(result.brokers ?? []).length === 0 ? (
-                    <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">Брокеры не найдены</td></tr>
+                    <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">Брокеры не найдены</td></tr>
                   ) : (result.brokers ?? []).map((b) => (
                     <tr key={String(b.id)} className="border-t hover:bg-muted/50">
                       <td className="px-4 py-2 font-medium">{String(b.display_name)}</td>
@@ -86,6 +88,14 @@ export default async function ManagerBrokersPage() {
                         }>
                           {b.status === 'active' ? 'Активен' : b.status === 'blocked' ? 'Заблокирован' : 'Неактивен'}
                         </Badge>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <BrokerActions
+                          brokerId={String(b.id)}
+                          brokerName={String(b.display_name)}
+                          currentStatus={(b.status as 'active' | 'inactive' | 'blocked') ?? 'inactive'}
+                          activeOrdersCount={Number(b.activeOrders ?? 0)}
+                        />
                       </td>
                     </tr>
                   ))}
