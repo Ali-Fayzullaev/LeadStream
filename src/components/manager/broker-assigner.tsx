@@ -19,6 +19,56 @@ interface BrokerAssignerProps {
   brokers: BrokerOption[];
 }
 
+const DROPDOWN_MAX_HEIGHT = 260; // px — максимальная высота списка
+const DROPDOWN_OFFSET = 4;       // px — отступ от кнопки
+
+interface DropdownPos {
+  // Все координаты — в viewport-пространстве (для position:fixed)
+  top?: number;
+  bottom?: number;
+  left: number;
+  minWidth: number;
+  maxHeight: number;
+  openUp: boolean;
+}
+
+function calcPosition(btn: HTMLButtonElement): DropdownPos {
+  // getBoundingClientRect() возвращает координаты ОТНОСИТЕЛЬНО VIEWPORT
+  // Для position:fixed это именно то, что нужно — НЕ прибавляем scrollY/scrollX
+  const rect = btn.getBoundingClientRect();
+  const viewportH = window.innerHeight;
+  const viewportW = window.innerWidth;
+
+  const spaceBelow = viewportH - rect.bottom;
+  const spaceAbove = rect.top;
+  const minWidth = Math.max(rect.width, 180);
+
+  // Открываем вверх, если снизу меньше 180px
+  const openUp = spaceBelow < 180;
+
+  // Не выходим за правый край экрана
+  const left = Math.min(rect.left, viewportW - minWidth - 8);
+
+  if (openUp) {
+    return {
+      // bottom = расстояние от низа viewport до верха кнопки (viewport coords)
+      bottom: viewportH - rect.top + DROPDOWN_OFFSET,
+      left,
+      minWidth,
+      maxHeight: Math.min(DROPDOWN_MAX_HEIGHT, spaceAbove - 8),
+      openUp: true,
+    };
+  }
+
+  return {
+    top: rect.bottom + DROPDOWN_OFFSET,
+    left,
+    minWidth,
+    maxHeight: Math.min(DROPDOWN_MAX_HEIGHT, spaceBelow - 8),
+    openUp: false,
+  };
+}
+
 export function BrokerAssigner({
   orderId,
   currentBrokerId,
@@ -29,38 +79,24 @@ export function BrokerAssigner({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [mounted, setMounted] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [pos, setPos] = useState<DropdownPos | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Ждём монтирования компонента на клиенте для портала
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
-  // Обновляем позицию при открытии или ресайзе окна
   useEffect(() => {
-    if (!open) return;
+    if (!open || !buttonRef.current) return;
 
-    const updatePosition = () => {
-      if (buttonRef.current) {
-        const rect = buttonRef.current.getBoundingClientRect();
-        setPosition({
-          top: rect.bottom + window.scrollY + 4, // +4px отступа
-          left: rect.left + window.scrollX,
-          width: rect.width,
-        });
-      }
+    const update = () => {
+      if (buttonRef.current) setPos(calcPosition(buttonRef.current));
     };
 
-    updatePosition();
-
-    // Обновляем позицию при скролле или ресайзе
-    window.addEventListener('scroll', updatePosition, true);
-    window.addEventListener('resize', updatePosition);
-
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
     return () => {
-      window.removeEventListener('scroll', updatePosition, true);
-      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
     };
   }, [open]);
 
@@ -80,8 +116,6 @@ export function BrokerAssigner({
       }
     });
   };
-
-  const handleClose = () => setOpen(false);
 
   return (
     <div className="relative inline-block">
@@ -109,26 +143,31 @@ export function BrokerAssigner({
             <span>Назначить</span>
           </>
         )}
-        <ChevronDown className="size-3 opacity-60" />
+        <ChevronDown
+          className={`size-3 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`}
+        />
       </button>
 
-      {/* Рендерим портал только на клиенте */}
-      {open && mounted && createPortal(
+      {open && mounted && pos && createPortal(
         <>
-          {/* Бэкдроп для клика вне */}
+          {/* Backdrop */}
           <div
             className="fixed inset-0 z-40"
-            onClick={handleClose}
+            onClick={() => setOpen(false)}
             aria-hidden="true"
           />
-          
-          {/* Выпадающее меню */}
+
+          {/* Dropdown */}
           <div
-            className="fixed z-50 mt-1 min-w-[180px] rounded-md border bg-popover p-1 shadow-md"
+            className="fixed z-50 rounded-md border bg-popover p-1 shadow-lg"
             style={{
-              top: position.top,
-              left: position.left,
-              minWidth: Math.max(position.width, 180),
+              ...(pos.openUp
+                ? { bottom: pos.bottom }
+                : { top: pos.top }),
+              left: pos.left,
+              minWidth: pos.minWidth,
+              maxHeight: pos.maxHeight,
+              overflowY: 'auto',
             }}
           >
             {brokers.length === 0 ? (
@@ -140,18 +179,19 @@ export function BrokerAssigner({
             ) : (
               <>
                 {currentBrokerId && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelect(null)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-orange-600 hover:bg-orange-500/10"
-                  >
-                    <UserX className="size-3.5" />
-                    Снять брокера
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(null)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs text-orange-600 hover:bg-orange-500/10"
+                    >
+                      <UserX className="size-3.5 shrink-0" />
+                      Снять брокера
+                    </button>
+                    <div className="my-1 h-px bg-border" />
+                  </>
                 )}
-                
-                {currentBrokerId && <div className="my-1 h-px bg-border" />}
-                
+
                 {brokers.map((b) => (
                   <button
                     key={b.id}
@@ -161,10 +201,10 @@ export function BrokerAssigner({
                       b.id === currentBrokerId ? 'bg-accent font-medium' : ''
                     }`}
                   >
-                    <UserCheck className="size-3.5" />
-                    {b.display_name}
+                    <UserCheck className="size-3.5 shrink-0" />
+                    <span className="flex-1 truncate">{b.display_name}</span>
                     {b.id === currentBrokerId && (
-                      <span className="ml-auto text-[10px] text-muted-foreground">
+                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
                         текущий
                       </span>
                     )}
@@ -174,7 +214,7 @@ export function BrokerAssigner({
             )}
           </div>
         </>,
-        document.body
+        document.body,
       )}
     </div>
   );
