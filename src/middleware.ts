@@ -77,7 +77,25 @@ async function querySupabaseRest(
   }
 }
 
+/**
+ * Top-level guard: this function MUST NEVER throw.
+ * If anything goes wrong (network error to Supabase, OOM, anything) we
+ * return a plain `NextResponse.next()` so nginx receives a valid 200/3xx
+ * response and the user sees the page (anonymous) instead of 502.
+ */
 export async function middleware(request: NextRequest) {
+  try {
+    return await runMiddleware(request);
+  } catch (err) {
+    console.error('[middleware] FATAL — letting request pass anonymously:', err);
+    // Pass through. The page will see no user; protected pages will redirect
+    // to /login on their own. The important thing is we DO NOT crash the
+    // Next.js server → no more 502 from nginx.
+    return NextResponse.next();
+  }
+}
+
+async function runMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const requestHeaders = new Headers(request.headers);

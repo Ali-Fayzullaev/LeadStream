@@ -4,6 +4,7 @@ import './globals.css';
 import { Providers } from './providers';
 import { getAppSettings } from '@/lib/settings';
 import { AuthWatchdog } from '@/components/auth-watchdog';
+import { AuthHeartbeat } from '@/components/auth-heartbeat';
 // Side-effect import: install global unhandledRejection / uncaughtException
 // handlers so a stale Supabase refresh-token doesn't crash the Node process.
 import '@/lib/process-handlers';
@@ -54,6 +55,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           502 Bad Gateway after the laptop wakes up from sleep.
         */}
         <AuthWatchdog />
+        {/*
+          Heartbeat: every 15 min refreshes the Supabase session from the
+          browser, so a tab left open for hours/days never hits the server
+          with an expired access-token (which previously caused 502 from
+          nginx after a long sleep).
+        */}
+        <AuthHeartbeat />
         <Providers>{children}</Providers>
       </body>
     </html>
