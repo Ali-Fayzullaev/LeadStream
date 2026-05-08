@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Download, AlertTriangle } from 'lucide-react';
+import { Download, AlertTriangle, Globe2 } from 'lucide-react';
 
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,17 @@ import { getOrderStatuses } from '@/lib/statuses';
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 50;
+
+/**
+ * "Primary" cities for which dedicated managers exist.
+ * Anything else falls into the "Другие города" tab so admin can review +
+ * route them manually.
+ *
+ * NOTE: keep slugs in sync with `supabase/migrations/0024_seed_all_kz_cities.sql`.
+ */
+const PRIMARY_CITY_SLUGS = ['astana', 'almaty'] as const;
+
+type TabKey = 'all' | 'unassigned' | 'other_cities';
 
 interface SP {
   page?: string;
@@ -30,14 +41,43 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   const page = Math.max(1, Number(searchParams?.page ?? 1) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
-  const tab = searchParams?.tab ?? 'all'; // 'all' | 'unassigned'
+  const tab: TabKey =
+    searchParams?.tab === 'unassigned' || searchParams?.tab === 'other_cities'
+      ? searchParams.tab
+      : 'all';
 
-  // Count unassigned (no city or no manager)
-  const { count: unassignedCount } = await admin
-    .from('orders')
-    .select('id', { count: 'exact', head: true })
-    .is('assigned_manager_id', null);
+  // ── Resolve city id sets so we can filter "primary" vs "other" cities ─────
+  // PRIMARY = Астана + Алматы (slugs above)
+  // OTHER   = everything else (city_id IS NOT NULL AND NOT IN primary)
+  const { data: allCities } = await admin
+    .from('cities')
+    .select('id, name, slug')
+    .order('name', { ascending: true });
 
+  const primaryCityIds = new Set(
+    (allCities ?? [])
+      .filter((c) => (PRIMARY_CITY_SLUGS as readonly string[]).includes(c.slug as string))
+      .map((c) => c.id as string),
+  );
+  const otherCityIds = (allCities ?? [])
+    .filter((c) => !primaryCityIds.has(c.id as string))
+    .map((c) => c.id as string);
+
+  // ── Counters for tab badges (cheap head-count queries in parallel) ────────
+  const [{ count: unassignedCount }, { count: otherCitiesCount }] = await Promise.all([
+    admin
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .is('city_id', null),
+    otherCityIds.length > 0
+      ? admin
+          .from('orders')
+          .select('id', { count: 'exact', head: true })
+          .in('city_id', otherCityIds)
+      : Promise.resolve({ count: 0 } as { count: number }),
+  ]);
+
+  // ── Main listing query ────────────────────────────────────────────────────
   let query = admin
     .from('orders')
     .select(
@@ -47,9 +87,17 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     .order('created_at', { ascending: false })
     .range(from, to);
 
-  // Tab filter
   if (tab === 'unassigned') {
-    query = query.is('assigned_manager_id', null);
+    // Клиент НЕ выбрал город — самые "сирые" заявки
+    query = query.is('city_id', null);
+  } else if (tab === 'other_cities') {
+    // Клиент выбрал город, но это не Астана/Алматы
+    if (otherCityIds.length > 0) {
+      query = query.in('city_id', otherCityIds);
+    } else {
+      // No other cities yet — return empty result
+      query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+    }
   }
 
   if (searchParams?.status && searchParams.status !== '') {
@@ -65,16 +113,12 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   if (searchParams?.from) query = query.gte('created_at', searchParams.from);
   if (searchParams?.to) query = query.lte('created_at', `${searchParams.to}T23:59:59`);
 
-  const [{ data: rawRows, count }, { data: streamers }, { data: cities }, statuses] = await Promise.all([
+  const [{ data: rawRows, count }, { data: streamers }, statuses] = await Promise.all([
     query,
     admin
       .from('streamers')
       .select('id, display_name, ref_code, avatar_url')
       .order('display_name', { ascending: true }),
-    admin
-      .from('cities')
-      .select('id, name')
-      .order('name', { ascending: true }),
     getOrderStatuses(),
   ]);
 
@@ -85,7 +129,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     (streamers ?? []).map((s) => [s.id, (s as { avatar_url?: string | null }).avatar_url ?? null]),
   );
   const cityNameMap = new Map(
-    (cities ?? []).map((c) => [c.id, c.name]),
+    (allCities ?? []).map((c) => [c.id as string, c.name as string]),
   );
 
   type Raw = {
@@ -103,8 +147,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     created_at: string;
   };
 
-  // Pre-fetch comment counts for all visible orders so the icon shows
-  // a badge IMMEDIATELY without waiting for the user to open the dialog.
+  // Pre-fetch comment counts so each row's icon shows a badge immediately.
   const orderIds = (rawRows ?? []).map((r) => r.id as string);
   const commentCountMap = await getCommentCounts(admin, orderIds);
 
@@ -135,6 +178,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
   }
   const exportHref = `/api/admin/orders/export${exportParams.toString() ? `?${exportParams}` : ''}`;
 
+  // Helpers to keep tab links idempotent
+  const tabHref = (t: TabKey): string => (t === 'all' ? '/admin/orders' : `/admin/orders?tab=${t}`);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -154,9 +200,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
       />
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b">
+      <div className="flex flex-wrap gap-1 border-b">
         <Link
-          href="/admin/orders"
+          href={tabHref('all')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             tab === 'all'
               ? 'border-primary text-primary'
@@ -165,8 +211,9 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
         >
           Все заявки
         </Link>
+
         <Link
-          href="/admin/orders?tab=unassigned"
+          href={tabHref('unassigned')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
             tab === 'unassigned'
               ? 'border-orange-500 text-orange-600 dark:text-orange-400'
@@ -181,8 +228,26 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
             </Badge>
           )}
         </Link>
+
+        <Link
+          href={tabHref('other_cities')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+            tab === 'other_cities'
+              ? 'border-sky-500 text-sky-600 dark:text-sky-400'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Globe2 className="size-3.5" />
+          Другие города
+          {(otherCitiesCount ?? 0) > 0 && (
+            <Badge className="bg-sky-500/10 text-sky-600 dark:text-sky-400 text-xs px-1.5 py-0">
+              {otherCitiesCount}
+            </Badge>
+          )}
+        </Link>
       </div>
 
+      {/* Tab info banners */}
       {tab === 'unassigned' && (
         <div className="rounded-lg bg-orange-500/5 border border-orange-500/20 p-4 flex items-start gap-3">
           <AlertTriangle className="size-5 text-orange-500 shrink-0 mt-0.5" />
@@ -191,8 +256,23 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
               Неопределённые заявки
             </p>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Эти заявки не были назначены менеджеру — клиент не выбрал город или город не совпал ни с одним менеджером.
-              Вы можете назначить их вручную или использовать «Авто-распределение».
+              Клиент <b>не выбрал город</b> на форме. Назначьте город вручную —
+              заявка автоматически перейдёт менеджеру по этому городу (если он есть).
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'other_cities' && (
+        <div className="rounded-lg bg-sky-500/5 border border-sky-500/20 p-4 flex items-start gap-3">
+          <Globe2 className="size-5 text-sky-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-sky-700 dark:text-sky-400">
+              Другие города (не Астана/Алматы)
+            </p>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Клиент выбрал город, для которого пока нет назначенного менеджера.
+              Заявки лежат у вас — обработайте лично или назначьте менеджеру.
             </p>
           </div>
         </div>
@@ -225,16 +305,14 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
             <div className="md:col-span-5 flex gap-2">
               <Button type="submit">Применить</Button>
               <Button type="button" variant="ghost" asChild>
-                <Link href={tab === 'unassigned' ? '/admin/orders?tab=unassigned' : '/admin/orders'}>
-                  Сбросить
-                </Link>
+                <Link href={tabHref(tab)}>Сбросить</Link>
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
 
-      <OrdersTable rows={rows} statuses={statuses} cities={cities ?? []} />
+      <OrdersTable rows={rows} statuses={statuses} cities={allCities ?? []} />
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">
@@ -270,8 +348,6 @@ async function getCommentCounts(
 ): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   if (orderIds.length === 0) return map;
-  // Supabase doesn't support GROUP BY on the JS client without RPC, so we
-  // fetch only the order_id column and count in JS. Fast enough for ≤500 rows.
   const { data, error } = await admin
     .from('order_comments')
     .select('order_id')

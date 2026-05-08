@@ -50,6 +50,24 @@ export function createClient(): SupabaseClient {
   const client = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        // Defaults are already these in supabase-js@2, but we set them
+        // explicitly to make the long-lived behaviour intentional and
+        // immune to future default changes:
+        persistSession: true,         // store session in localStorage
+        autoRefreshToken: true,       // proactively refresh ~10min before expiry
+        detectSessionInUrl: true,     // pick up `#access_token=` after OAuth/magic-link
+      },
+      cookieOptions: {
+        // Match server cookie lifetime (1 year). Without this the browser
+        // hands out a session-only cookie which dies on tab close →
+        // "Invalid Refresh Token" on next visit.
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: 'lax',
+        path: '/',
+      },
+    },
   );
 
   // Listen for global auth errors. supabase-js fires onAuthStateChange with

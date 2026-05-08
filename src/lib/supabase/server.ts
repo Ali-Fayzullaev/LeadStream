@@ -60,9 +60,19 @@ export function createClient(): SupabaseClient {
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
+            cookiesToSet.forEach(({ name, value, options }) => {
+              // Force a long-lived cookie so the browser keeps the session
+              // even after the laptop sleeps for days. Supabase by default
+              // uses sessionCookies (no maxAge), which on some browsers are
+              // discarded too aggressively → "Invalid Refresh Token".
+              const enriched: CookieOptions = {
+                ...options,
+                maxAge: options.maxAge ?? 60 * 60 * 24 * 365, // 1 year
+                sameSite: options.sameSite ?? 'lax',
+                path: options.path ?? '/',
+              };
+              cookieStore.set(name, value, enriched);
+            });
           } catch {
             // Server Component — ignored; middleware refreshes the session.
           }
