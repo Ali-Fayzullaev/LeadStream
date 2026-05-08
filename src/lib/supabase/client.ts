@@ -2,10 +2,40 @@ import { createBrowserClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Same idea as `lib/supabase/server.ts` but for the browser:
- * if the refresh-token is dead → wipe local storage + cookies for sb-* and
- * silently reload the page so middleware can redirect us to /login instead
- * of the user seeing a hard error.
+ * Browser Supabase client.
+ *
+ * Two critical fixes vs the previous implementation (root cause of the
+ * "site works for a while, then 502 until I delete cookies" bug):
+ *
+ *  1) **No-op `auth.lock`.**
+ *     `@supabase/gotrue-js` by default uses `navigator.locks.request(...,
+ *     { mode: 'exclusive' }, ...)` to serialise refreshes across tabs.
+ *     `navigator.locks` is only available on **secure contexts (HTTPS)**.
+ *     On the production HTTPS domain the lock can deadlock on Next.js
+ *     soft-navigations: the previous page hasn't released the lock yet
+ *     before the next page tries to refresh the token. Result: any call
+ *     to `auth.getSession()` / `auth.getUser()` hangs forever, the React
+ *     server component awaiting it never resolves, the request to Node
+ *     never returns, nginx hits its `proxy_read_timeout` and serves a
+ *     **502 Bad Gateway** to the user. Clearing cookies "fixes" it
+ *     because then the client doesn't try to refresh at all.
+ *
+ *     The fix is the same one used by the sister project (`tobacco-
+ *     supabase`): replace the lock with a no-op. For a single tab this
+ *     is identical to the locked version. For multiple tabs the worst
+ *     case is two concurrent refreshes — supabase's refresh-token rotation
+ *     reuse-interval (default 10s) makes that completely safe.
+ *
+ *  2) **Singleton.**
+ *     Two `GoTrueClient` instances on the same page compete for the same
+ *     `localStorage` key (and on HTTPS, the same `BroadcastChannel`),
+ *     producing race conditions that occasionally wipe the access token
+ *     mid-flight. Cache one client per browser session.
+ *
+ * Plus the existing safety nets are kept:
+ *  - long-lived cookies (1 year) so the session survives tab close,
+ *  - patched `getUser`/`getSession` that wipe a dead token + reload
+ *    instead of throwing.
  */
 
 function isAuthRefreshError(err: unknown): boolean {
@@ -46,18 +76,33 @@ function wipeAndReload(): void {
   }, 50);
 }
 
+// ─── Singleton cache ─────────────────────────────────────────────────────────
+// One GoTrueClient per browser tab. Multiple instances would compete for the
+// same localStorage key and the same BroadcastChannel → corrupted auth state.
+let __cachedClient: SupabaseClient | null = null;
+
 export function createClient(): SupabaseClient {
+  if (typeof window !== 'undefined' && __cachedClient) {
+    return __cachedClient;
+  }
+
   const client = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {
-        // Defaults are already these in supabase-js@2, but we set them
-        // explicitly to make the long-lived behaviour intentional and
-        // immune to future default changes:
-        persistSession: true,         // store session in localStorage
-        autoRefreshToken: true,       // proactively refresh ~10min before expiry
-        detectSessionInUrl: true,     // pick up `#access_token=` after OAuth/magic-link
+        // Long-lived browser session — see file header.
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        // ── CRITICAL: replace the navigator.locks-based lock with a no-op.
+        // On HTTPS the default exclusive lock can deadlock during Next.js
+        // soft-navigation, hanging getSession() forever and producing 502
+        // from nginx. See file header for the full rationale.
+        // The signature matches gotrue-js' `LockFunc`.
+        // @ts-ignore — `lock` exists in @supabase/gotrue-js but isn't surfaced
+        //              in the @supabase/ssr typings.
+        lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
       },
       cookieOptions: {
         // Match server cookie lifetime (1 year). Without this the browser
@@ -70,14 +115,12 @@ export function createClient(): SupabaseClient {
     },
   );
 
-  // Listen for global auth errors. supabase-js fires onAuthStateChange with
-  // event === 'TOKEN_REFRESHED' or 'SIGNED_OUT'. When it can't refresh, the
-  // next .auth.getUser()/getSession() call will throw — we patch those below.
+  // Reset the reload guard if the user signs out cleanly.
   client.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') __reloadingForAuth = false;
   });
 
-  // Patch getUser
+  // ── Patch getUser ────────────────────────────────────────────────────────
   const origGetUser = client.auth.getUser.bind(client.auth);
   client.auth.getUser = (async (...args: Parameters<typeof origGetUser>) => {
     try {
@@ -96,7 +139,7 @@ export function createClient(): SupabaseClient {
     }
   }) as typeof client.auth.getUser;
 
-  // Patch getSession
+  // ── Patch getSession ─────────────────────────────────────────────────────
   const origGetSession = client.auth.getSession.bind(client.auth);
   client.auth.getSession = (async (...args: Parameters<typeof origGetSession>) => {
     try {
@@ -115,5 +158,8 @@ export function createClient(): SupabaseClient {
     }
   }) as typeof client.auth.getSession;
 
+  if (typeof window !== 'undefined') {
+    __cachedClient = client;
+  }
   return client;
 }

@@ -106,7 +106,13 @@ async function runMiddleware(request: NextRequest) {
   const refParam = request.nextUrl.searchParams.get('ref');
   const refToSet = refParam && REF_RE.test(refParam) ? refParam.toLowerCase() : null;
 
-  // Session client (anon key) — only for auth.getUser()
+  // Session client (anon key) — only for auth.getUser().
+  //
+  // We use the modern `getAll` / `setAll` cookies API (recommended by
+  // @supabase/ssr ≥ 0.5). The legacy `get`/`set`/`remove` triplet would
+  // re-create the response on every cookie write and was the source of
+  // intermittent "auth cookie not propagated" bugs that left the browser
+  // with a half-rotated refresh token → "Invalid Refresh Token" → 502.
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -121,16 +127,23 @@ async function runMiddleware(request: NextRequest) {
         detectSessionInUrl: false,
       },
       cookies: {
-        get: (name: string) => request.cookies.get(name)?.value,
-        set: (name: string, value: string, options: CookieOptions) => {
-          request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value, ...options });
+        getAll() {
+          return request.cookies.getAll();
         },
-        remove: (name: string, options: CookieOptions) => {
-          request.cookies.set({ name, value: '', ...options });
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          // Mirror cookies into the request first so subsequent
+          // `request.cookies.get()` reads inside this same middleware
+          // invocation see the updated values.
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
+          // Re-create the response so it carries the up-to-date request
+          // headers (Next.js requires this when cookies changed).
           response = NextResponse.next({ request: { headers: request.headers } });
-          response.cookies.set({ name, value: '', ...options });
+          // Then set them on the outgoing response so the browser stores them.
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
         },
       },
     },

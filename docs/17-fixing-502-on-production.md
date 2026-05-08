@@ -111,22 +111,35 @@ pm2 save
 Эти правки **гарантируют, что Node-процесс никогда не падает** даже если
 refresh-token битый:
 
+- **`src/lib/supabase/client.ts` (БРАУЗЕР) — главный фикс «502 после
+  логина / удалил cookies → снова работает».** В `auth` передаётся
+  `lock: async (_n, _t, fn) => fn()` — no-op вместо стандартного
+  `navigator.locks.request(..., { mode: 'exclusive' }, ...)`. На HTTPS
+  стандартный exclusive-lock дедлочит при soft-navigation Next.js: пред.
+  страница не успевает отпустить лок до того, как новая страница
+  попытается обновить токен. В результате `getSession()` / `getUser()`
+  висят бесконечно, RSC ждёт промис, запрос к Node не возвращается,
+  nginx ловит `proxy_read_timeout` и отдаёт **502 Bad Gateway**. Удаление
+  cookies «лечит» симптом, потому что без cookie не происходит refresh.
+  Тот же фикс применён в проекте `tobacco-supabase` — поэтому он не падал.
+  Кроме того, `createClient()` теперь **синглтон** (один GoTrueClient на
+  вкладку) — иначе два экземпляра конкурируют за один localStorage key
+  и BroadcastChannel.
+- **`src/middleware.ts`** — обёрнут в top-level `try/catch`, плюс серверный
+  Supabase-клиент создаётся с `autoRefreshToken: false / persistSession:
+  false / detectSessionInUrl: false`. Никаких фоновых таймеров на сервере
+  → unhandledRejection физически негде возникнуть. Также мигрирован на
+  современный `getAll`/`setAll` API из `@supabase/ssr ≥ 0.5` — старый
+  `get/set/remove` триплет терял `options` при rotation refresh-токена.
 - **`src/instrumentation.ts` + `next.config.mjs` (instrumentationHook: true)**
   — глобальные `unhandledRejection` / `uncaughtException` ставятся
   **до любого пользовательского кода**, на самом старте Node-процесса.
   Подавляют `AuthApiError: Invalid Refresh Token` (фоновый таймер
   GoTrueClient), которые раньше убивали процесс → PM2 рестартил → nginx
-  отдавал 502. **Это и есть главный фикс.**
-- **`src/middleware.ts`** — обёрнут в top-level `try/catch`, плюс серверный
-  Supabase-клиент создаётся с `autoRefreshToken: false / persistSession:
-  false / detectSessionInUrl: false`. Никаких фоновых таймеров на сервере
-  → unhandledRejection физически негде возникнуть.
+  отдавал 502.
 - **`src/lib/supabase/server.ts`** — то же самое + `getUser()` /
   `getSession()` пропатчены и НЕ бросают на «Invalid Refresh Token»
   (возвращают `null`). На стейл-токене ещё и сами чистят cookie.
-- **`src/lib/supabase/client.ts`** — в браузере наоборот включены
-  `persistSession: true`, `autoRefreshToken: true` + длинные cookie
-  (`maxAge` = 1 год), чтобы сессия выживала закрытие вкладки.
 - **`src/lib/process-handlers.ts`** — дублирующий слой защиты на случай
   если по какой-то причине `instrumentation.ts` не запустился.
 - **`src/components/auth-heartbeat.tsx`** — каждые 15 минут проактивно
@@ -185,11 +198,29 @@ PM2 logs).
 
 ## 6. Почему `tobaccotrade.kz` не падает
 
-Скорее всего, либо:
-- авторизованных пользователей **меньше** → реже срабатывает refresh,
-- nginx настроен с большими буферами по умолчанию,
-- Next.js там в Docker с health-check + auto-restart,
-- меньшее кол-во cookie на домене (нет ref/utm-cookies, как у нас).
+Главная причина — в `tobacco-supabase/frontend/src/lib/supabase.ts`
+при создании браузерного клиента передаётся **no-op `auth.lock`**:
 
-После применения шагов 1–3 наша конфигурация сравняется с ней по
-надёжности.
+```ts
+createBrowserClient(url, key, {
+  auth: {
+    // @ts-ignore
+    lock: async (_name, _timeout, fn) => fn(),
+  },
+});
+```
+
+Это отключает дедлок `navigator.locks` при soft-navigation на HTTPS,
+который и являлся первопричиной 502 в LeadStream. Также там клиент —
+**синглтон** (один экземпляр на вкладку), без двух конкурирующих
+GoTrueClient'ов.
+
+Сейчас оба фикса перенесены в LeadStream (`src/lib/supabase/client.ts`),
+так что наша конфигурация сравнялась с ней по надёжности.
+
+Дополнительно играли роль:
+- nginx с дефолтными буферами не справлялся с длинными Supabase-cookie
+  (см. п. 1),
+- авторизованных пользователей в LeadStream больше → чаще refresh →
+  чаще ловили дедлок,
+- больше cookie на домене (ref/utm).
