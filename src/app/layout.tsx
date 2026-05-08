@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { getAppSettings } from '@/lib/settings';
+import { AuthWatchdog } from '@/components/auth-watchdog';
 // Side-effect import: install global unhandledRejection / uncaughtException
 // handlers so a stale Supabase refresh-token doesn't crash the Node process.
 import '@/lib/process-handlers';
@@ -47,6 +48,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={`${inter.variable} font-sans`} suppressHydrationWarning>
+        {/*
+          Periodically pings /api/_health/auth and wipes stale Supabase
+          cookies if it detects a "ghost" session — prevents the dreaded
+          502 Bad Gateway after the laptop wakes up from sleep.
+        */}
+        <AuthWatchdog />
         <Providers>{children}</Providers>
       </body>
     </html>
