@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
 import { OrderStatusUpdater } from '@/components/manager/order-status-updater';
 import { BrokerAssigner } from '@/components/manager/broker-assigner';
+import { OrderCommentsThread } from '@/components/order-comments-thread';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
 
@@ -80,6 +81,20 @@ export default async function ManagerOrdersPage({
   if (searchParams?.to) q = q.lte('created_at', `${searchParams.to}T23:59:59`);
 
   const [{ data: orders }, statuses] = await Promise.all([q, getOrderStatuses()]);
+
+  // Pre-fetch comment counts so the icon shows a badge straight away.
+  const orderIds = (orders ?? []).map((o) => o.id as string);
+  const commentCountMap = new Map<string, number>();
+  if (orderIds.length > 0) {
+    const { data: cc } = await admin
+      .from('order_comments')
+      .select('order_id')
+      .in('order_id', orderIds);
+    for (const row of cc ?? []) {
+      const id = row.order_id as string;
+      commentCountMap.set(id, (commentCountMap.get(id) ?? 0) + 1);
+    }
+  }
 
   const brokerNameMap = new Map(
     (brokers ?? []).map((b) => [b.id as string, b.display_name as string]),
@@ -210,6 +225,7 @@ export default async function ManagerOrdersPage({
                     <th className="text-left px-4 py-2 font-medium">Брокер</th>
                     <th className="text-left px-4 py-2 font-medium">Статус</th>
                     <th className="text-left px-4 py-2 font-medium">Дата</th>
+                    <th className="text-right px-4 py-2 font-medium">Комм.</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -266,6 +282,13 @@ export default async function ManagerOrdersPage({
                             hour: '2-digit',
                             minute: '2-digit',
                           })}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <OrderCommentsThread
+                            orderId={o.id}
+                            iconOnly
+                            initialCount={commentCountMap.get(o.id) ?? 0}
+                          />
                         </td>
                       </tr>
                     );

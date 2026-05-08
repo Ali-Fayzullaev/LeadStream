@@ -103,6 +103,11 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     created_at: string;
   };
 
+  // Pre-fetch comment counts for all visible orders so the icon shows
+  // a badge IMMEDIATELY without waiting for the user to open the dialog.
+  const orderIds = (rawRows ?? []).map((r) => r.id as string);
+  const commentCountMap = await getCommentCounts(admin, orderIds);
+
   const rows: OrderRow[] = ((rawRows ?? []) as unknown as Raw[]).map((r) => ({
     id: r.id,
     customer_name: r.customer_name,
@@ -118,6 +123,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     city_id: r.city_id,
     city_name: r.city_id ? (cityNameMap.get(r.city_id) ?? null) : null,
     is_assigned: r.assigned_manager_id !== null,
+    comments_count: commentCountMap.get(r.id) ?? 0,
   }));
 
   const total = count ?? 0;
@@ -252,4 +258,28 @@ function buildUrl(sp: SP, page: number) {
   for (const [k, v] of Object.entries(sp ?? {})) if (k !== 'page' && v) p.set(k, v);
   p.set('page', String(page));
   return `/admin/orders?${p}`;
+}
+
+/**
+ * Returns Map<orderId, count> with the number of comments per order.
+ * Uses a single grouped query — efficient for big lists.
+ */
+async function getCommentCounts(
+  admin: ReturnType<typeof createAdminClient>,
+  orderIds: string[],
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (orderIds.length === 0) return map;
+  // Supabase doesn't support GROUP BY on the JS client without RPC, so we
+  // fetch only the order_id column and count in JS. Fast enough for ≤500 rows.
+  const { data, error } = await admin
+    .from('order_comments')
+    .select('order_id')
+    .in('order_id', orderIds);
+  if (error) return map;
+  for (const row of data ?? []) {
+    const id = row.order_id as string;
+    map.set(id, (map.get(id) ?? 0) + 1);
+  }
+  return map;
 }

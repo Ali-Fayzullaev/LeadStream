@@ -173,7 +173,6 @@ export function OrderForm({
           <Label htmlFor="customerName" className="flex items-center gap-1.5 text-sm font-medium">
             <User className="size-3.5 text-muted-foreground" />
             Ваше имя
-            <span className="text-muted-foreground font-normal text-xs">(необязательно, до {NAME_MAX_LEN} симв.)</span>
           </Label>
           <Input
             id="customerName"
@@ -255,7 +254,6 @@ export function OrderForm({
         <Label htmlFor="cityId" className="flex items-center gap-1.5 text-sm font-medium">
           <MapPin className="size-3.5 text-muted-foreground" />
           Ваш город
-          <span className="text-muted-foreground font-normal text-xs">(необязательно)</span>
         </Label>
         {citiesLoading ? (
           <div className="h-11 rounded-md bg-muted animate-pulse" />

@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BrokerOrderStatusUpdater } from '@/components/broker/order-status-updater';
+import { OrderCommentsThread } from '@/components/order-comments-thread';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
 
@@ -46,6 +47,20 @@ export default async function BrokerDashboardPage() {
   const statusMap = new Map(statuses.map((s) => [s.key, s]));
 
   const all = orders ?? [];
+
+  // Pre-fetch comment counts for the badge.
+  const orderIds = all.map((o) => o.id as string);
+  const commentCountMap = new Map<string, number>();
+  if (orderIds.length > 0) {
+    const { data: cc } = await admin
+      .from('order_comments')
+      .select('order_id')
+      .in('order_id', orderIds);
+    for (const row of cc ?? []) {
+      const id = row.order_id as string;
+      commentCountMap.set(id, (commentCountMap.get(id) ?? 0) + 1);
+    }
+  }
   const newCount = all.filter((o) => o.status === 'new').length;
   const doneCount = all.filter((o) => o.status === 'completed').length;
   const cancelCount = all.filter((o) => o.status === 'cancelled').length;
@@ -94,12 +109,13 @@ export default async function BrokerDashboardPage() {
                   <th className="text-left px-4 py-2 font-medium">Менеджер</th>
                   <th className="text-center px-4 py-2 font-medium">Статус</th>
                   <th className="text-right px-4 py-2 font-medium">Дата</th>
+                  <th className="text-right px-4 py-2 font-medium">Комм.</th>
                 </tr>
               </thead>
               <tbody>
                 {all.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-12 text-muted-foreground">
                       <p className="font-medium">Лиды пока не назначены</p>
                       <p className="text-xs mt-1">Менеджер назначит вам клиентов — они появятся здесь.</p>
                     </td>
@@ -154,6 +170,13 @@ export default async function BrokerDashboardPage() {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <OrderCommentsThread
+                            orderId={o.id}
+                            iconOnly
+                            initialCount={commentCountMap.get(o.id) ?? 0}
+                          />
                         </td>
                       </tr>
                     );

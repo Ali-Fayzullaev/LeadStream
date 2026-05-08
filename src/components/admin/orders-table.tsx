@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
 import { adminUpdateOrderStatusAction, adminDeleteOrderAction, adminUpdateOrderCityAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
+import { OrderCommentsThread } from '@/components/order-comments-thread';
 
 export interface OrderRow {
   id: string;
@@ -27,6 +28,7 @@ export interface OrderRow {
   city_id: string | null;
   city_name: string | null;
   is_assigned: boolean;
+  comments_count?: number;
 }
 
 export interface City {
@@ -164,9 +166,12 @@ function OrderRowView({ row, statuses, cities }: { row: OrderRow; statuses: Stat
         />
       </td>
       <td className="px-4 py-2 text-right">
-        <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
-          {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
-        </Button>
+        <div className="inline-flex items-center gap-1">
+          <OrderCommentsThread orderId={row.id} iconOnly initialCount={row.comments_count ?? 0} />
+          <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
+          </Button>
+        </div>
         <ConfirmDialog
           open={confirmOpen}
           title="Удалить заказ?"
