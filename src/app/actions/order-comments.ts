@@ -38,7 +38,16 @@ const MAX_BODY = 2000;
  */
 async function getCaller(): Promise<CallerCtx> {
   const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // getUser() may throw on stale/invalid refresh tokens. Catch defensively
+  // so the action returns a clean { success:false } instead of a server crash
+  // (which would surface as a 502 in dev / Cannot read 'success' on the client).
+  let user: { id: string; email?: string | null } | null = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data?.user ?? null;
+  } catch {
+    user = null;
+  }
   if (!user) throw new Error('Не авторизован');
 
   const admin = createAdminClient();

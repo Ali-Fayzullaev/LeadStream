@@ -62,22 +62,33 @@ export function OrderCommentsThread({ orderId, initialCount = 0, iconOnly = fals
   const [pending, start] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Load comments when dialog opens
+  // Load comments when dialog opens.
+  // We DEFENSIVELY normalise the server-action result: server actions can
+  // return `undefined` when the runtime throws above the try/catch (e.g. a
+  // 502/abort), so we never trust `res.success` directly without a guard.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
-    listOrderCommentsAction(orderId)
-      .then((res) => {
+    (async () => {
+      try {
+        const res = await listOrderCommentsAction(orderId);
         if (cancelled) return;
-        if (res.success) {
+        if (res && res.success) {
           setComments(res.comments);
           setCount(res.comments.length);
         } else {
-          toast.error(res.error);
+          const msg = (res && 'error' in res && res.error) || 'Не удалось загрузить комментарии';
+          toast.error(msg);
         }
-      })
-      .finally(() => !cancelled && setLoading(false));
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(err instanceof Error ? err.message : 'Сетевая ошибка');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
     return () => { cancelled = true; };
   }, [open, orderId]);
 
@@ -93,13 +104,17 @@ export function OrderCommentsThread({ orderId, initialCount = 0, iconOnly = fals
     const text = draft.trim();
     if (!text) return;
     start(async () => {
-      const res = await createOrderCommentAction(orderId, text);
-      if (res.success) {
-        setComments((prev) => [...prev, res.comment]);
-        setCount((c) => c + 1);
-        setDraft('');
-      } else {
-        toast.error(res.error);
+      try {
+        const res = await createOrderCommentAction(orderId, text);
+        if (res && res.success) {
+          setComments((prev) => [...prev, res.comment]);
+          setCount((c) => c + 1);
+          setDraft('');
+        } else {
+          toast.error((res && 'error' in res && res.error) || 'Не удалось добавить комментарий');
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Сетевая ошибка');
       }
     });
   };
@@ -113,12 +128,16 @@ export function OrderCommentsThread({ orderId, initialCount = 0, iconOnly = fals
     const text = editingDraft.trim();
     if (!text) return;
     start(async () => {
-      const res = await updateOrderCommentAction(id, text);
-      if (res.success) {
-        setComments((prev) => prev.map((x) => (x.id === id ? res.comment : x)));
-        setEditingId(null);
-      } else {
-        toast.error(res.error);
+      try {
+        const res = await updateOrderCommentAction(id, text);
+        if (res && res.success) {
+          setComments((prev) => prev.map((x) => (x.id === id ? res.comment : x)));
+          setEditingId(null);
+        } else {
+          toast.error((res && 'error' in res && res.error) || 'Не удалось сохранить');
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Сетевая ошибка');
       }
     });
   };
@@ -126,12 +145,16 @@ export function OrderCommentsThread({ orderId, initialCount = 0, iconOnly = fals
   const handleDelete = (id: string) => {
     if (!window.confirm('Удалить комментарий?')) return;
     start(async () => {
-      const res = await deleteOrderCommentAction(id);
-      if (res.success) {
-        setComments((prev) => prev.filter((x) => x.id !== id));
-        setCount((c) => Math.max(0, c - 1));
-      } else {
-        toast.error(res.error);
+      try {
+        const res = await deleteOrderCommentAction(id);
+        if (res && res.success) {
+          setComments((prev) => prev.filter((x) => x.id !== id));
+          setCount((c) => Math.max(0, c - 1));
+        } else {
+          toast.error((res && 'error' in res && res.error) || 'Не удалось удалить');
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Сетевая ошибка');
       }
     });
   };
