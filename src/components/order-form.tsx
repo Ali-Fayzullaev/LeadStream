@@ -65,6 +65,10 @@ export function OrderForm({
 
   const [step, setStep] = useState<1 | 2>(1);
 
+  // Consent checkbox: auto-checks as soon as the user starts typing in Step 1.
+  // The flag itself is required at submit-time; users can untick it manually.
+  const [consent, setConsent] = useState(false);
+
   useEffect(() => {
     fetch('/api/cities', { cache: 'no-store' })
       .then(r => r.json())
@@ -81,12 +85,15 @@ export function OrderForm({
   }, []);
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCustomerName(e.target.value.slice(0, NAME_MAX_LEN));
+    const v = e.target.value.slice(0, NAME_MAX_LEN);
+    setCustomerName(v);
+    if (v.length > 0) setConsent(true);
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhone(e.target.value);
     setCustomerPhone(formatted);
+    if (formatted.length > 0) setConsent(true);
     if (formatted && !isValidPhone(formatted)) {
       setPhoneError('Введите корректный номер (10–15 цифр)');
     } else {
@@ -105,6 +112,10 @@ export function OrderForm({
     }
     if (!isValidPhone(customerPhone)) {
       setPhoneError('Введите корректный номер (10–15 цифр)');
+      return;
+    }
+    if (!consent) {
+      setError('Подтвердите согласие на обработку персональных данных');
       return;
     }
 
@@ -221,6 +232,21 @@ export function OrderForm({
           <ArrowRight className="size-4" />
         </Button>
 
+        {/* Privacy consent — auto-checks as user types; tiny + low-contrast on purpose. */}
+        <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            className="mt-0.5 size-3.5 shrink-0 cursor-pointer accent-primary"
+            aria-label="Согласие на обработку персональных данных"
+          />
+          <span className="text-[11px] leading-snug text-muted-foreground/80">
+            Отправляя данные, вы даёте согласие на обработку персональных данных
+            для связи и консультации.
+          </span>
+        </label>
+
         {streamerName && (
           <p className="text-center text-xs text-muted-foreground">
             Вас пригласил: <strong>{streamerName}</strong>
@@ -274,9 +300,6 @@ export function OrderForm({
             ))}
           </select>
         )}
-        <p className="text-xs text-muted-foreground">
-          Указав город, мы быстрее свяжемся с вами. Можно отправить и без выбора.
-        </p>
       </div>
 
       {error && <p className="text-sm text-destructive break-words">{error}</p>}
