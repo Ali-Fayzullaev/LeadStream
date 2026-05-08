@@ -54,6 +54,22 @@ export function createClient(): SupabaseClient {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      auth: {
+        // CRITICAL on the server: do NOT keep a background timer that tries
+        // to refresh the access token. Refresh on the server would just
+        // mutate cookies that have already been sent — and worse, it
+        // schedules a `setTimeout` that fires AFTER the request is gone,
+        // producing the dreaded `unhandledRejection: AuthApiError: Invalid
+        // Refresh Token` that crashes the Node process under PM2 and makes
+        // nginx return 502.
+        //
+        // The browser (`lib/supabase/client.ts`) takes care of refresh; the
+        // server only READS the user from the cookie that the browser
+        // already negotiated.
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
       cookies: {
         getAll() {
           return cookieStore.getAll();

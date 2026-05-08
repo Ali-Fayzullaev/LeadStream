@@ -111,20 +111,47 @@ pm2 save
 Эти правки **гарантируют, что Node-процесс никогда не падает** даже если
 refresh-token битый:
 
-- **`src/middleware.ts`** — обёрнут в top-level `try/catch`. Любая ошибка
-  превращается в `NextResponse.next()` без юзера. → **никаких 502 от
-  упавшего Next.**
-- **`src/lib/supabase/server.ts`** — `getUser()` / `getSession()` пропатчены
-  и не бросают на «Invalid Refresh Token» (возвращают `null`).
-- **`src/lib/supabase/client.ts`** — то же самое в браузере + длинные cookie
-  (`maxAge` = 1 год).
-- **`src/lib/process-handlers.ts`** — `process.on('unhandledRejection')`
-  глушит auth-ошибки, чтобы PM2 не убивал инстанс.
+- **`src/instrumentation.ts` + `next.config.mjs` (instrumentationHook: true)**
+  — глобальные `unhandledRejection` / `uncaughtException` ставятся
+  **до любого пользовательского кода**, на самом старте Node-процесса.
+  Подавляют `AuthApiError: Invalid Refresh Token` (фоновый таймер
+  GoTrueClient), которые раньше убивали процесс → PM2 рестартил → nginx
+  отдавал 502. **Это и есть главный фикс.**
+- **`src/middleware.ts`** — обёрнут в top-level `try/catch`, плюс серверный
+  Supabase-клиент создаётся с `autoRefreshToken: false / persistSession:
+  false / detectSessionInUrl: false`. Никаких фоновых таймеров на сервере
+  → unhandledRejection физически негде возникнуть.
+- **`src/lib/supabase/server.ts`** — то же самое + `getUser()` /
+  `getSession()` пропатчены и НЕ бросают на «Invalid Refresh Token»
+  (возвращают `null`). На стейл-токене ещё и сами чистят cookie.
+- **`src/lib/supabase/client.ts`** — в браузере наоборот включены
+  `persistSession: true`, `autoRefreshToken: true` + длинные cookie
+  (`maxAge` = 1 год), чтобы сессия выживала закрытие вкладки.
+- **`src/lib/process-handlers.ts`** — дублирующий слой защиты на случай
+  если по какой-то причине `instrumentation.ts` не запустился.
 - **`src/components/auth-heartbeat.tsx`** — каждые 15 минут проактивно
   обновляет токен в браузере, чтобы вкладка, открытая на ночь, не
   «протухала».
-- **`src/components/auth-watchdog.tsx`** (был раньше) — пингует
-  `/api/_health/auth`, и если сервер видит мёртвую сессию, чистит кукисы.
+- **`src/components/auth-watchdog.tsx`** — пингует `/api/_health/auth`, и
+  если сервер видит мёртвую сессию, чистит cookie на клиенте.
+
+### ⚠️ Деплой
+
+После `git pull` на сервере **обязательно**:
+
+```bash
+cd /var/www/stream.raycon.kz
+git pull
+npm ci --production=false
+npm run build
+pm2 restart leadstream --update-env
+pm2 logs leadstream --lines 50    # должна появиться строка
+                                   # "[instrumentation] global error handlers installed"
+```
+
+Если в логах **нет** строки `[instrumentation] global error handlers
+installed` — значит билд не подхватил `instrumentationHook`. Удали
+`.next/` и пересобери: `rm -rf .next && npm run build`.
 
 ---
 

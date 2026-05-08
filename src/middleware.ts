@@ -111,6 +111,15 @@ async function runMiddleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      auth: {
+        // Same reasoning as in `lib/supabase/server.ts`: do NOT keep an
+        // internal refresh timer in the Edge runtime. Stops the
+        // `unhandledRejection: AuthApiError: Invalid Refresh Token` that
+        // otherwise crashes the Node process under PM2 → 502 from nginx.
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
       cookies: {
         get: (name: string) => request.cookies.get(name)?.value,
         set: (name: string, value: string, options: CookieOptions) => {
