@@ -140,7 +140,7 @@ export function createClient(): SupabaseClient {
           }
           return out;
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options?: unknown }[]) {
           if (typeof document === 'undefined') return;
           // Slim every sb-*-auth-token cookie. Keeps document.cookie short
           // and consequently the next request's Cookie header short →
