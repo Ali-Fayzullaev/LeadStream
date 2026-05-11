@@ -135,6 +135,30 @@ export function buildStreamerOrderNotificationHtml(o: OrderNotificationPayload):
   ].join('\n');
 }
 
+/**
+ * Streamer notification for an UNASSIGNED order (visitor didn't pick a city).
+ * The streamer is expected to open the cabinet and choose the city — only
+ * then will the order get routed to a manager / broker.
+ */
+export function buildStreamerUnassignedOrderHtml(o: {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  productName: string;
+  quantity: number;
+  amount: number;
+}): string {
+  return [
+    '⚠️ <b>Новая заявка — нужно указать город!</b>',
+    `👤 ${escapeHtml(o.customerName)} · 📞 ${escapeHtml(o.customerPhone)}`,
+    `📦 ${escapeHtml(o.productName)} × ${o.quantity}`,
+    `💵 ${formatTng(o.amount)}`,
+    '',
+    '🏙 <i>Клиент не выбрал город на лендинге. Откройте кабинет и укажите город — заявка автоматически попадёт менеджеру и брокеру.</i>',
+    `🔗 <a href="${APP_URL}/streamer/orders">Указать город</a>`,
+  ].join('\n');
+}
+
 export interface NewStreamerNotificationPayload {
   fullName: string;
   email: string;

@@ -5,7 +5,7 @@ import { rateLimit, getClientIp } from '@/lib/rate-limit';
 import {
   sendTelegramMessage,
   buildOrderNotificationHtml,
-  buildStreamerOrderNotificationHtml,
+  buildStreamerUnassignedOrderHtml,
   buildManagerLeadNotificationHtml,
   buildBrokerLeadNotificationHtml,
 } from '@/lib/telegram';
@@ -193,9 +193,25 @@ export async function POST(request: NextRequest) {
   // Admin channel — now includes city / manager / broker for full context
   void sendTelegramMessage(buildOrderNotificationHtml(notifPayload));
 
-  // Streamer personal
-  if (streamerChat) {
-    void sendTelegramMessage(buildStreamerOrderNotificationHtml(notifPayload), streamerChat);
+  // Streamer personal — ONLY when the order has no city yet.
+  //
+  // Business rule: streamers shouldn't be spammed for orders that already
+  // have a city (those flow straight to manager/broker without any action
+  // from the streamer). Streamers are pinged only for "unassigned" leads
+  // so they open the cabinet, pick the city for the customer, and trigger
+  // the normal routing. See `streamer/actions.ts → assignCityToOrderAction`.
+  if (streamerChat && !cityId) {
+    void sendTelegramMessage(
+      buildStreamerUnassignedOrderHtml({
+        id: order.id,
+        customerName: customerName ?? 'Не указано',
+        customerPhone,
+        productName,
+        quantity,
+        amount,
+      }),
+      streamerChat,
+    );
   }
 
   // Manager personal
