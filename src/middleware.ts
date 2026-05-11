@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { slimAuthCookiesInPlace } from '@/lib/supabase/cookie-slim';
 
 /**
  * Middleware responsibilities:
@@ -188,17 +189,21 @@ async function runMiddleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          // Strip the bulky `user` object from `sb-*-auth-token` cookies
+          // *before* writing them. See `lib/supabase/cookie-slim.ts` for
+          // the rationale (it's the in-code fix for 502 Bad Gateway).
+          const slimmed = slimAuthCookiesInPlace(cookiesToSet);
           // Mirror cookies into the request first so subsequent
           // `request.cookies.get()` reads inside this same middleware
           // invocation see the updated values.
-          cookiesToSet.forEach(({ name, value }) => {
+          slimmed.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
           // Re-create the response so it carries the up-to-date request
           // headers (Next.js requires this when cookies changed).
           response = NextResponse.next({ request: { headers: request.headers } });
           // Then set them on the outgoing response so the browser stores them.
-          cookiesToSet.forEach(({ name, value, options }) => {
+          slimmed.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
           });
         },

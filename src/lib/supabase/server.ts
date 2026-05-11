@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { CookieOptions } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { slimAuthCookiesInPlace } from '@/lib/supabase/cookie-slim';
 
 /**
  * Returns true for any auth error that means "the refresh token is dead".
@@ -76,16 +77,21 @@ export function createClient(): SupabaseClient {
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) => {
+            // Strip the bulky `user` object from `sb-*-auth-token` cookies
+            // before persisting. Keeps the cookie ≤ ~1 KB so the combined
+            // request Cookie header never overflows nginx' buffer and we
+            // never serve 502 Bad Gateway because of fat cookies.
+            const slimmed = slimAuthCookiesInPlace(cookiesToSet);
+            slimmed.forEach(({ name, value, options }) => {
               // Force a long-lived cookie so the browser keeps the session
               // even after the laptop sleeps for days. Supabase by default
               // uses sessionCookies (no maxAge), which on some browsers are
               // discarded too aggressively → "Invalid Refresh Token".
               const enriched: CookieOptions = {
-                ...options,
-                maxAge: options.maxAge ?? 60 * 60 * 24 * 365, // 1 year
-                sameSite: options.sameSite ?? 'lax',
-                path: options.path ?? '/',
+                ...(options as CookieOptions),
+                maxAge: (options as CookieOptions).maxAge ?? 60 * 60 * 24 * 365, // 1 year
+                sameSite: (options as CookieOptions).sameSite ?? 'lax',
+                path: (options as CookieOptions).path ?? '/',
               };
               cookieStore.set(name, value, enriched);
             });

@@ -1,5 +1,6 @@
 import { createBrowserClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { slimAuthCookiesInPlace } from '@/lib/supabase/cookie-slim';
 
 /**
  * Browser Supabase client.
@@ -111,6 +112,73 @@ export function createClient(): SupabaseClient {
         maxAge: 60 * 60 * 24 * 365,
         sameSite: 'lax',
         path: '/',
+      },
+      // ── Custom cookies API ──────────────────────────────────────────────
+      // We provide our own getAll/setAll so we can SLIM the auth-token
+      // cookie before it touches document.cookie. Without this, supabase-js
+      // writes the whole session blob (~4.7 KB base64-encoded) into
+      // document.cookie → the next request to Next.js carries an oversized
+      // Cookie header → nginx replies 502 Bad Gateway.
+      //
+      // After slimming the persisted cookie is ~700 bytes (only
+      // access_token / refresh_token / expires_at / token_type kept).
+      // `auth.getUser()` will re-fetch the user object from Supabase when
+      // needed, so there's no functional regression.
+      //
+      // See `cookie-slim.ts` for the full rationale.
+      cookies: {
+        getAll() {
+          if (typeof document === 'undefined') return [];
+          const out: { name: string; value: string }[] = [];
+          for (const part of document.cookie.split(';')) {
+            const eq = part.indexOf('=');
+            if (eq < 0) continue;
+            const name = part.slice(0, eq).trim();
+            if (!name) continue;
+            const value = decodeURIComponent(part.slice(eq + 1));
+            out.push({ name, value });
+          }
+          return out;
+        },
+        setAll(cookiesToSet) {
+          if (typeof document === 'undefined') return;
+          // Slim every sb-*-auth-token cookie. Keeps document.cookie short
+          // and consequently the next request's Cookie header short →
+          // nginx is happy → no 502.
+          const slimmed = slimAuthCookiesInPlace(cookiesToSet as { name: string; value: string; options?: unknown }[]);
+          for (const { name, value, options } of slimmed) {
+            // Build a Set-Cookie compatible string for document.cookie.
+            // We always set path=/, sameSite=Lax, plus a 1-year maxAge so
+            // the cookie survives across browser sessions (same policy as
+            // the server-side write in middleware.ts / server.ts).
+            const opts = (options ?? {}) as {
+              maxAge?: number;
+              path?: string;
+              domain?: string;
+              sameSite?: 'lax' | 'strict' | 'none' | boolean;
+              secure?: boolean;
+              expires?: Date;
+            };
+            const parts: string[] = [];
+            parts.push(`${name}=${encodeURIComponent(value)}`);
+            parts.push(`Path=${opts.path ?? '/'}`);
+            const maxAge = typeof opts.maxAge === 'number' ? opts.maxAge : 60 * 60 * 24 * 365;
+            // Deletion case: maxAge === 0 → also include Expires in the past.
+            if (maxAge === 0) {
+              parts.push('Max-Age=0');
+              parts.push('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+            } else {
+              parts.push(`Max-Age=${maxAge}`);
+            }
+            if (opts.domain) parts.push(`Domain=${opts.domain}`);
+            const sameSite = opts.sameSite ?? 'lax';
+            parts.push(`SameSite=${typeof sameSite === 'string' ? sameSite : 'Lax'}`);
+            if (opts.secure ?? (typeof location !== 'undefined' && location.protocol === 'https:')) {
+              parts.push('Secure');
+            }
+            try { document.cookie = parts.join('; '); } catch { /* private mode */ }
+          }
+        },
       },
     },
   );
