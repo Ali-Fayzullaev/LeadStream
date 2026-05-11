@@ -16,206 +16,6 @@ import {
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-// ===========================================================================
-// Assign city to an unassigned order ("определить заявку")
-// ===========================================================================
-
-/**
- * Streamer picks a city for one of their unassigned orders.
- *
- * Validates:
- *   - The current user IS a streamer with `status = 'active'`.
- *   - The order belongs to this streamer.
- *   - The order's `city_id` is currently NULL (an unassigned order). Once
- *     a city is set we never let it be changed by the streamer again.
- *   - The chosen `cityId` references a real, active city.
- *
- * Side-effects:
- *   - Sets `orders.city_id`.
- *   - Picks the least-loaded active manager for that city (and least-loaded
- *     broker under that manager), assigns them, bumps their distribution
- *     counters — exactly the same routing the public POST /api/orders does.
- *   - Sends Telegram pings to the freshly-assigned manager / broker.
- *
- * Done with `createAdminClient()` because the manager/broker tables are not
- * accessible to streamers via RLS (and a manager-RLS would be far more
- * complex than the trigger from migration 0027). The RLS + trigger added
- * in migration 0027 still protect the integrity of the action: even if
- * this server action were bypassed and a streamer queried Supabase
- * directly, they could only set city_id on their own orders.
- */
-export async function assignCityToOrderAction(
-  orderId: string,
-  cityId: string,
-): Promise<ActionResult> {
-  if (typeof orderId !== 'string' || !orderId.trim()) {
-    return { ok: false, error: 'Не указана заявка' };
-  }
-  if (typeof cityId !== 'string' || !cityId.trim()) {
-    return { ok: false, error: 'Выберите город' };
-  }
-
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: 'Not authenticated' };
-
-  const admin = createAdminClient();
-
-  // 1. Resolve the current streamer profile.
-  const { data: streamer } = await admin
-    .from('streamers')
-    .select('id, status')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (!streamer) return { ok: false, error: 'Профиль стримера не найден' };
-  if (streamer.status !== 'active') {
-    return { ok: false, error: 'Ваш аккаунт неактивен — действие недоступно' };
-  }
-
-  // 2. Load the order and make sure it's:
-  //    - mine, and
-  //    - still unassigned (city_id IS NULL).
-  const { data: order, error: orderErr } = await admin
-    .from('orders')
-    .select('id, streamer_id, city_id, customer_name, customer_phone, product_name')
-    .eq('id', orderId)
-    .maybeSingle();
-
-  if (orderErr || !order) return { ok: false, error: 'Заявка не найдена' };
-  if (order.streamer_id !== streamer.id) {
-    return { ok: false, error: 'Это не ваша заявка' };
-  }
-  if (order.city_id) {
-    return { ok: false, error: 'Город для заявки уже указан' };
-  }
-
-  // 3. Validate the chosen city (must exist + be active).
-  const { data: city } = await admin
-    .from('cities')
-    .select('id, name, is_active')
-    .eq('id', cityId)
-    .maybeSingle();
-  if (!city) return { ok: false, error: 'Город не найден' };
-  if (city.is_active === false) return { ok: false, error: 'Город неактивен' };
-
-  // 4. Find the best manager / broker for this city — same heuristic as
-  //    in /api/orders (least `distribution_count`, ties broken by oldest
-  //    `created_at`).
-  let assignedManagerId: string | null = null;
-  let assignedManagerTgId: string | null = null;
-  let assignedManagerName: string | null = null;
-  let assignedBrokerId: string | null = null;
-  let assignedBrokerTgId: string | null = null;
-  let assignedBrokerName: string | null = null;
-
-  const { data: managers } = await admin
-    .from('managers')
-    .select('id, display_name, telegram_chat_id, distribution_count')
-    .eq('city_id', cityId)
-    .eq('status', 'active')
-    .order('distribution_count', { ascending: true })
-    .order('created_at', { ascending: true })
-    .limit(1);
-
-  const manager = managers?.[0] ?? null;
-  if (manager) {
-    assignedManagerId = manager.id;
-    assignedManagerTgId = manager.telegram_chat_id ?? null;
-    assignedManagerName = manager.display_name;
-
-    const { data: brokers } = await admin
-      .from('brokers')
-      .select('id, display_name, telegram_chat_id, distribution_count')
-      .eq('manager_id', manager.id)
-      .eq('status', 'active')
-      .order('distribution_count', { ascending: true })
-      .order('created_at', { ascending: true })
-      .limit(1);
-
-    const broker = brokers?.[0] ?? null;
-    if (broker) {
-      assignedBrokerId = broker.id;
-      assignedBrokerTgId = broker.telegram_chat_id ?? null;
-      assignedBrokerName = broker.display_name;
-    }
-  }
-
-  // 5. Persist everything in ONE update — this also satisfies the
-  //    "streamer fills city" trigger added in migration 0027 because
-  //    we run as service_role (which bypasses the trigger guard).
-  const { error: updErr } = await admin
-    .from('orders')
-    .update({
-      city_id: cityId,
-      assigned_manager_id: assignedManagerId,
-      assigned_broker_id: assignedBrokerId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', orderId)
-    .is('city_id', null); // defensive: nobody can race us in between
-
-  if (updErr) return { ok: false, error: updErr.message };
-
-  // 6. Bump distribution counters (best-effort — never fail the action).
-  if (manager) {
-    void admin.from('managers').update({
-      distribution_count: (manager.distribution_count ?? 0) + 1,
-      updated_at: new Date().toISOString(),
-    }).eq('id', manager.id);
-  }
-  // Re-fetch broker for fresh count? We already have `broker` above — but
-  // it's only in the closure when defined. Use a guard:
-  if (assignedBrokerId) {
-    // We have the previous count from `brokers[0]`; capture it via a query
-    // to avoid stale data on contention. Cheap because indexed PK lookup.
-    const { data: b } = await admin
-      .from('brokers')
-      .select('distribution_count')
-      .eq('id', assignedBrokerId)
-      .maybeSingle();
-    if (b) {
-      void admin.from('brokers').update({
-        distribution_count: (b.distribution_count ?? 0) + 1,
-        updated_at: new Date().toISOString(),
-      }).eq('id', assignedBrokerId);
-    }
-  }
-
-  // 7. Telegram pings (fire-and-forget).
-  const customerName = order.customer_name ?? 'Не указано';
-  if (assignedManagerTgId) {
-    void sendTelegramMessage(
-      buildManagerLeadNotificationHtml({
-        orderId: order.id,
-        customerName,
-        customerPhone: order.customer_phone,
-        cityName: city.name,
-        productName: order.product_name,
-        brokerName: assignedBrokerName,
-      }),
-      assignedManagerTgId,
-    );
-  }
-  if (assignedBrokerTgId) {
-    void sendTelegramMessage(
-      buildBrokerLeadNotificationHtml({
-        orderId: order.id,
-        customerName,
-        customerPhone: order.customer_phone,
-        cityName: city.name,
-        productName: order.product_name,
-      }),
-      assignedBrokerTgId,
-    );
-  }
-
-  revalidatePath('/streamer/orders');
-  return { ok: true };
-}
-
 /**
  * Sends a test Telegram message to the streamer's saved telegram_chat_id.
  * Detects "user never started the bot" and returns a helpful message.
@@ -376,3 +176,170 @@ export async function deleteTikTokAccountAction(id: string): Promise<ActionResul
   revalidatePath('/streamer/profile');
   return { ok: true };
 }
+
+// ===========================================================================
+// Assign city to an unassigned order ("определить заявку")
+// ===========================================================================
+
+/**
+ * Streamer picks a city for one of their unassigned orders.
+ *
+ * Validates:
+ *   - User is an ACTIVE streamer.
+ *   - Order belongs to this streamer.
+ *   - `city_id` is currently NULL (once set, streamer can't change it).
+ *   - `cityId` references a real, active city.
+ *
+ * Side-effects:
+ *   - Sets `orders.city_id`.
+ *   - Picks the least-loaded active manager / broker, assigns them, bumps
+ *     distribution counters — same routing as `POST /api/orders` does for
+ *     orders that arrive with a city already set.
+ *   - Sends Telegram pings to the freshly-assigned manager / broker.
+ */
+export async function assignCityToOrderAction(
+  orderId: string,
+  cityId: string,
+): Promise<ActionResult> {
+  if (typeof orderId !== 'string' || !orderId.trim()) {
+    return { ok: false, error: 'Не указана заявка' };
+  }
+  if (typeof cityId !== 'string' || !cityId.trim()) {
+    return { ok: false, error: 'Выберите город' };
+  }
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not authenticated' };
+
+  const admin = createAdminClient();
+
+  const { data: streamer } = await admin
+    .from('streamers')
+    .select('id, status')
+    .eq('user_id', user.id)
+    .maybeSingle();
+  if (!streamer) return { ok: false, error: 'Профиль стримера не найден' };
+  if (streamer.status !== 'active') {
+    return { ok: false, error: 'Ваш аккаунт неактивен — действие недоступно' };
+  }
+
+  const { data: order, error: orderErr } = await admin
+    .from('orders')
+    .select('id, streamer_id, city_id, customer_name, customer_phone, product_name')
+    .eq('id', orderId)
+    .maybeSingle();
+  if (orderErr || !order) return { ok: false, error: 'Заявка не найдена' };
+  if (order.streamer_id !== streamer.id) {
+    return { ok: false, error: 'Это не ваша заявка' };
+  }
+  if (order.city_id) {
+    return { ok: false, error: 'Город для заявки уже указан' };
+  }
+
+  const { data: city } = await admin
+    .from('cities')
+    .select('id, name, is_active')
+    .eq('id', cityId)
+    .maybeSingle();
+  if (!city) return { ok: false, error: 'Город не найден' };
+  if (city.is_active === false) return { ok: false, error: 'Город неактивен' };
+
+  let assignedManagerId: string | null = null;
+  let assignedManagerTgId: string | null = null;
+  let assignedBrokerId: string | null = null;
+  let assignedBrokerTgId: string | null = null;
+  let assignedBrokerName: string | null = null;
+  let prevManagerCount = 0;
+  let prevBrokerCount = 0;
+
+  const { data: managers } = await admin
+    .from('managers')
+    .select('id, telegram_chat_id, distribution_count')
+    .eq('city_id', cityId)
+    .eq('status', 'active')
+    .order('distribution_count', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  const manager = managers?.[0] ?? null;
+  if (manager) {
+    assignedManagerId = manager.id;
+    assignedManagerTgId = manager.telegram_chat_id ?? null;
+    prevManagerCount = manager.distribution_count ?? 0;
+
+    const { data: brokers } = await admin
+      .from('brokers')
+      .select('id, display_name, telegram_chat_id, distribution_count')
+      .eq('manager_id', manager.id)
+      .eq('status', 'active')
+      .order('distribution_count', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    const broker = brokers?.[0] ?? null;
+    if (broker) {
+      assignedBrokerId = broker.id;
+      assignedBrokerTgId = broker.telegram_chat_id ?? null;
+      assignedBrokerName = broker.display_name;
+      prevBrokerCount = broker.distribution_count ?? 0;
+    }
+  }
+
+  const { error: updErr } = await admin
+    .from('orders')
+    .update({
+      city_id: cityId,
+      assigned_manager_id: assignedManagerId,
+      assigned_broker_id: assignedBrokerId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orderId)
+    .is('city_id', null);
+  if (updErr) return { ok: false, error: updErr.message };
+
+  if (assignedManagerId) {
+    void admin.from('managers').update({
+      distribution_count: prevManagerCount + 1,
+      updated_at: new Date().toISOString(),
+    }).eq('id', assignedManagerId);
+  }
+  if (assignedBrokerId) {
+    void admin.from('brokers').update({
+      distribution_count: prevBrokerCount + 1,
+      updated_at: new Date().toISOString(),
+    }).eq('id', assignedBrokerId);
+  }
+
+  const customerName = order.customer_name ?? 'Не указано';
+  if (assignedManagerTgId) {
+    void sendTelegramMessage(
+      buildManagerLeadNotificationHtml({
+        orderId: order.id,
+        customerName,
+        customerPhone: order.customer_phone,
+        cityName: city.name,
+        productName: order.product_name,
+        brokerName: assignedBrokerName,
+      }),
+      assignedManagerTgId,
+    );
+  }
+  if (assignedBrokerTgId) {
+    void sendTelegramMessage(
+      buildBrokerLeadNotificationHtml({
+        orderId: order.id,
+        customerName,
+        customerPhone: order.customer_phone,
+        cityName: city.name,
+        productName: order.product_name,
+      }),
+      assignedBrokerTgId,
+    );
+  }
+
+  revalidatePath('/streamer/orders');
+  return { ok: true };
+}
+
+

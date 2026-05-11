@@ -22,13 +22,12 @@ as
 select
   o.id,
   o.customer_name,
-  case
-    when length(o.customer_phone) >= 6
-      then substr(o.customer_phone, 1, greatest(length(o.customer_phone) - 6, 2))
-           || repeat('*', 4)
-           || substr(o.customer_phone, length(o.customer_phone) - 1)
-    else repeat('*', length(o.customer_phone))
-  end as customer_phone_masked,
+  -- Streamers see the FULL phone (product requirement Nov 2025). The
+  -- previously-masked `customer_phone_masked` column is kept under its
+  -- old name so legacy callers don't break, but it now returns the same
+  -- value as `customer_phone` — there is no obfuscation any more.
+  o.customer_phone,
+  o.customer_phone as customer_phone_masked,
   o.product_name,
   o.quantity,
   o.amount,
