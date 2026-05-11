@@ -129,36 +129,15 @@ export function AuthWatchdog(): null {
     //    comes back as 401, treat as dead session. We deliberately DO NOT
     //    react to 502/503 here because those are usually transient backend
     //    blips, not auth issues.
-    //
-    // CRITICAL: this wrapper MUST be 100% transparent. Any throw, any
-    // returned `undefined` instead of a Response, propagates as the
-    // dreaded `Cannot read properties of undefined (reading 'ok')` in
-    // unrelated code paths. We mirror error/Response semantics exactly.
     const origFetch = window.fetch.bind(window);
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      let res: Response;
+      const res = await origFetch(input, init);
       try {
-        res = await origFetch(input, init);
-      } catch (err) {
-        // Network/abort error — re-throw so callers can handle it the
-        // same way they would with the native fetch.
-        throw err;
-      }
-      // Inspect status side-effectually, but NEVER let our logic affect
-      // what the caller receives.
-      try {
-        if (res && res.status === 401) {
-          const url = typeof input === 'string'
-            ? input
-            : input instanceof URL ? input.href
-            : (input as Request).url;
-          if (typeof url === 'string' && url.startsWith('/')) {
-            // Defer to avoid recursion through any further fetch calls
-            // happening synchronously inside this microtask.
-            setTimeout(() => wipeAndReload(`fetch ${url} → 401`), 0);
-          }
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url && url.startsWith('/') && res.status === 401) {
+          wipeAndReload(`fetch ${url} → 401`);
         }
-      } catch { /* watchdog must never throw */ }
+      } catch { /* ignore */ }
       return res;
     };
 
