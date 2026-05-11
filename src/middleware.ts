@@ -95,6 +95,35 @@ export async function middleware(request: NextRequest) {
   }
 }
 
+/**
+ * Hard cap for the total Cookie header size we accept (≈ 6 KB).
+ * Default nginx `large_client_header_buffers 4 8k` can accommodate ~8 KB
+ * before returning **502 / upstream sent too big header**. We trip earlier
+ * (6 KB) to leave room for Host/User-Agent/Accept/X-Forwarded-* etc.
+ *
+ * If we cross the threshold, the only safe action is to wipe the auth
+ * cookies and let the user log in again — otherwise the user is locked
+ * into a hard-to-recover 502 loop where their own cookies are the problem.
+ *
+ * This is the in-code mitigation for the production issue where Supabase
+ * chunked `sb-*-auth-token.0/.1` cookies + ref/utm/cf cookies push the
+ * combined header past nginx' buffer limit.
+ */
+const MAX_COOKIE_HEADER_BYTES = 6 * 1024;
+
+function isCookieHeaderTooBig(request: NextRequest): boolean {
+  const cookieHeader = request.headers.get('cookie') ?? '';
+  // `cookieHeader` is ASCII-ish, but be safe with TextEncoder.
+  // Avoid `new TextEncoder()` allocation in the hot path when the string
+  // is obviously small.
+  if (cookieHeader.length < MAX_COOKIE_HEADER_BYTES * 0.6) return false;
+  try {
+    return new TextEncoder().encode(cookieHeader).byteLength > MAX_COOKIE_HEADER_BYTES;
+  } catch {
+    return cookieHeader.length > MAX_COOKIE_HEADER_BYTES;
+  }
+}
+
 async function runMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -102,6 +131,34 @@ async function runMiddleware(request: NextRequest) {
   requestHeaders.set('x-pathname', pathname);
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
+
+  // ── EMERGENCY: oversized cookie header ────────────────────────────────────
+  // Symptom in production: clients log in, after some time the Supabase
+  // chunked auth cookies + ref/utm/cf cookies push the Cookie header above
+  // ~8 KB and nginx returns 502 ("upstream sent too big header"). Deleting
+  // cookies "fixes" it, until next time. Here we pre-empt the failure: if
+  // the incoming Cookie header is dangerously large, wipe all sb-* cookies
+  // server-side and send a 200/redirect so the user is never exposed to
+  // the 502 from nginx.
+  if (isCookieHeaderTooBig(request)) {
+    console.warn(
+      '[middleware] Cookie header too big',
+      (request.headers.get('cookie') ?? '').length,
+      'bytes — wiping sb-* cookies and redirecting to /login',
+    );
+    const url = request.nextUrl.clone();
+    url.pathname = '/login';
+    url.search = '';
+    const r = NextResponse.redirect(url);
+    // Wipe BOTH the canonical cookie name and every chunked variant
+    // (`<name>.0`, `<name>.1`, …) on every plausible path/domain.
+    for (const c of request.cookies.getAll()) {
+      if (c.name.startsWith('sb-') || c.name.includes('-auth-token')) {
+        r.cookies.set({ name: c.name, value: '', maxAge: 0, path: '/' });
+      }
+    }
+    return r;
+  }
 
   const refParam = request.nextUrl.searchParams.get('ref');
   const refToSet = refParam && REF_RE.test(refParam) ? refParam.toLowerCase() : null;

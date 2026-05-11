@@ -1,0 +1,119 @@
+# ────────────────────────────────────────────────────────────────────────────
+# LeadStream — production nginx site config
+# ────────────────────────────────────────────────────────────────────────────
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# In production we kept seeing the following pattern:
+#
+#   1. User logs in → site works.
+#   2. After ~hour / day → user reloads → **502 Bad Gateway**.
+#   3. User deletes site cookies → site works again until next time.
+#
+# The actual error in `/var/log/nginx/error.log` is:
+#
+#   upstream sent too big header while reading response header from upstream
+#
+# Root cause: a Supabase auth cookie (`sb-<project>-auth-token`) contains a
+# base64-encoded payload with the full user object embedded (≈ 4–5 KB). Once
+# it's joined with `ls_ref`, UTM cookies, Cloudflare `cf_clearance`/`__cf_bm`
+# etc, the combined `Cookie:` request header crosses the default nginx limit
+# (`large_client_header_buffers 4 8k` ⇒ ~8 KB), and nginx rejects the
+# upstream response with 502.
+#
+# The fix below is **purely operational** — it raises both client/header
+# buffers and the upstream response buffers so that fat Supabase cookies
+# can flow through without nginx ever returning 502 because of buffering.
+#
+# HOW TO APPLY
+# ------------
+#   sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/leadstream
+#   sudo ln -sf /etc/nginx/sites-available/leadstream /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Adjust `server_name`, `ssl_certificate` paths and upstream port if needed.
+# ────────────────────────────────────────────────────────────────────────────
+
+# ── HTTP → HTTPS redirect ────────────────────────────────────────────────────
+server {
+    listen 80;
+    server_name stream.comfort-time.kz;
+    return 301 https://$host$request_uri;
+}
+
+# ── Main HTTPS vhost ─────────────────────────────────────────────────────────
+server {
+    listen 443 ssl http2;
+    server_name stream.comfort-time.kz;
+
+    # Path to your Let's Encrypt / certificate files
+    ssl_certificate     /etc/letsencrypt/live/stream.comfort-time.kz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/stream.comfort-time.kz/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # ── CRITICAL: request-header buffers ──────────────────────────────────
+    # Required to accept fat Supabase auth cookies. Without these the user
+    # gets 502 once their session-cookie crosses ~6 KB.
+    large_client_header_buffers 16 32k;
+    client_header_buffer_size   16k;
+    client_max_body_size        25m;
+
+    # ── CRITICAL: proxy buffers towards Next.js upstream ─────────────────
+    # Same problem on the response side — Next.js sets the rotated
+    # `Set-Cookie:` and nginx must be able to hold the whole header.
+    proxy_buffer_size        128k;
+    proxy_buffers            8  256k;
+    proxy_busy_buffers_size  256k;
+    proxy_temp_file_write_size 256k;
+
+    # ── Timeouts ──────────────────────────────────────────────────────────
+    # Next.js cold starts can occasionally take >30s; default 60s is fine
+    # for warm responses but we bump the read/send to be safe.
+    proxy_connect_timeout 60s;
+    proxy_send_timeout    300s;
+    proxy_read_timeout    300s;
+
+    # ── Gzip ──────────────────────────────────────────────────────────────
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript
+               application/xml+rss application/atom+xml image/svg+xml;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_vary on;
+
+    # ── Security headers ──────────────────────────────────────────────────
+    add_header X-Frame-Options           "SAMEORIGIN"        always;
+    add_header X-Content-Type-Options    "nosniff"           always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        # WebSocket / streaming support
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+
+        # Standard reverse-proxy headers
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+
+        proxy_cache_bypass $http_upgrade;
+        proxy_redirect     off;
+    }
+
+    # ── Static cache (Next.js immutable assets) ──────────────────────────
+    location /_next/static/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        expires 365d;
+        add_header Cache-Control "public, immutable";
+    }
+}
