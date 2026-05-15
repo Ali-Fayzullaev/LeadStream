@@ -8,10 +8,10 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/page-header';
 import { OrderStatusUpdater } from '@/components/manager/order-status-updater';
 import { BrokerAssigner } from '@/components/manager/broker-assigner';
-import { OrderCommentsThread } from '@/components/order-comments-thread';
+import { OrderCommentsInline } from '@/components/order-comments-inline';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
-import { getOrderCommentsSummary } from '@/app/actions/order-comments';
+import { getOrderCommentsBulk } from '@/app/actions/order-comments';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,11 +83,11 @@ export default async function ManagerOrdersPage({
 
   const [{ data: orders }, statuses] = await Promise.all([q, getOrderStatuses()]);
 
-  // Pre-fetch comment count + last-comment preview in one round trip so
-  // the manager can read the latest message right in the table without
-  // opening the dialog.
+  // Pre-fetch ALL comments for the orders on this page so the inline
+  // thread can render the full conversation directly in the table — no
+  // modal, no client-side fetch.
   const orderIds = (orders ?? []).map((o) => o.id as string);
-  const commentSummary = await getOrderCommentsSummary(orderIds);
+  const commentsByOrder = await getOrderCommentsBulk(orderIds, user.id);
 
   const brokerNameMap = new Map(
     (brokers ?? []).map((b) => [b.id as string, b.display_name as string]),
@@ -218,7 +218,7 @@ export default async function ManagerOrdersPage({
                     <th className="text-left px-4 py-2 font-medium">Брокер</th>
                     <th className="text-left px-4 py-2 font-medium">Статус</th>
                     <th className="text-left px-4 py-2 font-medium">Дата</th>
-                    <th className="text-right px-4 py-2 font-medium">Комм.</th>
+                    <th className="text-left px-4 py-2 font-medium min-w-[280px]">Комментарии</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -276,13 +276,11 @@ export default async function ManagerOrdersPage({
                             minute: '2-digit',
                           })}
                         </td>
-                        <td className="px-2 py-2 text-right align-top">
-                          <OrderCommentsThread
+                        <td className="px-2 py-2 align-top min-w-[280px]">
+                          <OrderCommentsInline
                             orderId={o.id}
-                            iconOnly
-                            initialCount={commentSummary.get(o.id)?.count ?? 0}
-                            lastComment={commentSummary.get(o.id)?.last ?? null}
-                            previewLayout="block"
+                            initialComments={commentsByOrder.get(o.id) ?? []}
+                            compactForm
                           />
                         </td>
                       </tr>

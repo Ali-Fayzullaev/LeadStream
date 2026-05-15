@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Download, AlertTriangle, Globe2 } from 'lucide-react';
 
+import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,7 +11,7 @@ import { PageHeader } from '@/components/page-header';
 import { OrdersTable, type OrderRow } from '@/components/admin/orders-table';
 import { AutoDistributeButton } from '@/components/admin/auto-distribute-button';
 import { getOrderStatuses } from '@/lib/statuses';
-import { getOrderCommentsSummary } from '@/app/actions/order-comments';
+import { getOrderCommentsBulk } from '@/app/actions/order-comments';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,6 +40,11 @@ interface SP {
 
 export default async function AdminOrdersPage({ searchParams }: { searchParams: SP }) {
   const admin = createAdminClient();
+  // Admin's auth user is needed so we can mark `is_mine` correctly on
+  // every comment when pre-fetching them in bulk.
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const viewerId = user?.id ?? null;
   const page = Math.max(1, Number(searchParams?.page ?? 1) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
@@ -148,14 +154,13 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     created_at: string;
   };
 
-  // Pre-fetch comment count + last-comment-preview so each row shows
-  // both a badge AND an inline message preview without needing the user
-  // to open the dialog. One round-trip for all rows on the page.
+  // Pre-fetch ALL comments for the orders on this page so the inline
+  // thread can render the full conversation directly in the table.
   const orderIds = (rawRows ?? []).map((r) => r.id as string);
-  const commentSummary = await getOrderCommentsSummary(orderIds);
+  const commentsByOrder = await getOrderCommentsBulk(orderIds, viewerId);
 
   const rows: OrderRow[] = ((rawRows ?? []) as unknown as Raw[]).map((r) => {
-    const summary = commentSummary.get(r.id);
+    const list = commentsByOrder.get(r.id) ?? [];
     return {
       id: r.id,
       customer_name: r.customer_name,
@@ -171,8 +176,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
       city_id: r.city_id,
       city_name: r.city_id ? (cityNameMap.get(r.city_id) ?? null) : null,
       is_assigned: r.assigned_manager_id !== null,
-      comments_count: summary?.count ?? 0,
-      last_comment: summary?.last ?? null,
+      comments: list,
     };
   });
 
@@ -345,8 +349,5 @@ function buildUrl(sp: SP, page: number) {
   return `/admin/orders?${p}`;
 }
 
-// Comment count + last-comment preview now come from a single helper —
-// `getOrderCommentsSummary` in `@/app/actions/order-comments`. We deleted
-// the page-local `getCommentCounts` to keep that logic in one place and
-// remove the awkward `Map<orderId, number>` shape that no longer matches
-// what the UI needs.
+// Comment data now comes from `getOrderCommentsBulk` so the table can
+// render the full thread inline. The old page-local count helper is gone.

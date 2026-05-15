@@ -5,10 +5,10 @@ import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BrokerOrderStatusUpdater } from '@/components/broker/order-status-updater';
-import { OrderCommentsThread } from '@/components/order-comments-thread';
+import { OrderCommentsInline } from '@/components/order-comments-inline';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
-import { getOrderCommentsSummary } from '@/app/actions/order-comments';
+import { getOrderCommentsBulk } from '@/app/actions/order-comments';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,10 +49,10 @@ export default async function BrokerDashboardPage() {
 
   const all = orders ?? [];
 
-  // Pre-fetch comment count + last-comment preview in one query so the
-  // broker sees latest messages without clicking each row.
+  // Pre-fetch ALL comments so the inline thread can show every message
+  // right in the table — no modal, no client fetch.
   const orderIds = all.map((o) => o.id as string);
-  const commentSummary = await getOrderCommentsSummary(orderIds);
+  const commentsByOrder = await getOrderCommentsBulk(orderIds, user.id);
   const newCount = all.filter((o) => o.status === 'new').length;
   const doneCount = all.filter((o) => o.status === 'completed').length;
   const cancelCount = all.filter((o) => o.status === 'cancelled').length;
@@ -101,7 +101,7 @@ export default async function BrokerDashboardPage() {
                   <th className="text-left px-4 py-2 font-medium">Менеджер</th>
                   <th className="text-center px-4 py-2 font-medium">Статус</th>
                   <th className="text-right px-4 py-2 font-medium">Дата</th>
-                  <th className="text-right px-4 py-2 font-medium">Комм.</th>
+                  <th className="text-left px-4 py-2 font-medium min-w-[280px]">Комментарии</th>
                 </tr>
               </thead>
               <tbody>
@@ -163,13 +163,11 @@ export default async function BrokerDashboardPage() {
                             minute: '2-digit',
                           })}
                         </td>
-                        <td className="px-2 py-2 text-right align-top">
-                          <OrderCommentsThread
+                        <td className="px-2 py-2 align-top min-w-[280px]">
+                          <OrderCommentsInline
                             orderId={o.id}
-                            iconOnly
-                            initialCount={commentSummary.get(o.id)?.count ?? 0}
-                            lastComment={commentSummary.get(o.id)?.last ?? null}
-                            previewLayout="block"
+                            initialComments={commentsByOrder.get(o.id) ?? []}
+                            compactForm
                           />
                         </td>
                       </tr>

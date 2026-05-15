@@ -263,6 +263,62 @@ export async function getOrderCommentsSummary(
   return map;
 }
 
+/**
+ * Bulk-fetch ALL comments for the supplied order ids in chronological order.
+ *
+ * Used by list pages (admin / manager / broker dashboards) so that the
+ * comments thread is fully visible inline — no extra round-trip when the
+ * user expands a row. The viewer's `userId` is provided so we can mark
+ * `is_mine` correctly without a second auth check inside the loop.
+ *
+ * Returns `Map<orderId, OrderCommentDTO[]>` with the inner arrays sorted
+ * ascending by `created_at` (so the freshest message is at the bottom,
+ * same convention as the dialog uses).
+ *
+ * Authorisation is the caller's job — this helper assumes the caller has
+ * already proved (via role-aware data fetching on the page) that the
+ * viewer can see these orders.
+ */
+export async function getOrderCommentsBulk(
+  orderIds: string[],
+  viewerUserId: string | null,
+): Promise<Map<string, OrderCommentDTO[]>> {
+  const map = new Map<string, OrderCommentDTO[]>();
+  if (orderIds.length === 0) return map;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('order_comments')
+    .select('id, order_id, author_id, author_role, author_name, body, created_at, updated_at, edited')
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('[order-comments] getOrderCommentsBulk failed:', error);
+    return map;
+  }
+
+  for (const row of data ?? []) {
+    const id = row.order_id as string;
+    const dto: OrderCommentDTO = {
+      id: row.id as string,
+      order_id: id,
+      author_id: row.author_id as string,
+      author_role: row.author_role as OrderCommentRole,
+      author_name: (row.author_name as string | null) ?? null,
+      body: row.body as string,
+      created_at: row.created_at as string,
+      updated_at: row.updated_at as string,
+      edited: !!row.edited,
+      is_mine: viewerUserId !== null && (row.author_id as string) === viewerUserId,
+    };
+    const arr = map.get(id);
+    if (arr) arr.push(dto);
+    else map.set(id, [dto]);
+  }
+  return map;
+}
+
 export async function createOrderCommentAction(
   orderId: string,
   body: string,

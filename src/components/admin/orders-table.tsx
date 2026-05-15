@@ -11,8 +11,8 @@ import { EmptyState } from '@/components/empty-state';
 import { UserAvatar } from '@/components/user-avatar';
 import { adminUpdateOrderStatusAction, adminDeleteOrderAction, adminUpdateOrderCityAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
-import { OrderCommentsThread } from '@/components/order-comments-thread';
-import type { OrderCommentPreview } from '@/app/actions/order-comments';
+import { OrderCommentsInline } from '@/components/order-comments-inline';
+import type { OrderCommentDTO } from '@/app/actions/order-comments';
 
 export interface OrderRow {
   id: string;
@@ -29,9 +29,12 @@ export interface OrderRow {
   city_id: string | null;
   city_name: string | null;
   is_assigned: boolean;
-  comments_count?: number;
-  /** Most recent comment, shown inline so users don't need to open the dialog. */
-  last_comment?: OrderCommentPreview | null;
+  /**
+   * Full server-rendered thread of comments for this order. Renders inline
+   * via <OrderCommentsInline>, so admin sees the whole conversation
+   * without opening a dialog.
+   */
+  comments?: OrderCommentDTO[];
 }
 
 export interface City {
@@ -57,6 +60,7 @@ export function OrdersTable({ rows, statuses, cities }: { rows: OrderRow[]; stat
             <th className="text-left px-4 py-2 font-medium">Стример</th>
             <th className="text-left px-4 py-2 font-medium">Город</th>
             <th className="text-left px-4 py-2 font-medium">Статус</th>
+            <th className="text-left px-4 py-2 font-medium min-w-[280px]">Комментарии</th>
             <th className="text-right px-4 py-2 font-medium" />
           </tr>
         </thead>
@@ -168,21 +172,17 @@ function OrderRowView({ row, statuses, cities }: { row: OrderRow; statuses: Stat
           current={current}
         />
       </td>
+      <td className="px-2 py-2 align-top min-w-[280px]">
+        <OrderCommentsInline
+          orderId={row.id}
+          initialComments={row.comments ?? []}
+          compactForm
+        />
+      </td>
       <td className="px-4 py-2 text-right align-top">
-        <div className="inline-flex flex-col items-end gap-1">
-          <div className="inline-flex items-center gap-1">
-            <OrderCommentsThread
-              orderId={row.id}
-              iconOnly
-              initialCount={row.comments_count ?? 0}
-              lastComment={row.last_comment ?? null}
-              previewLayout="block"
-            />
-            <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
-              {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
-            </Button>
-          </div>
-        </div>
+        <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
+          {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
+        </Button>
         <ConfirmDialog
           open={confirmOpen}
           title="Удалить заказ?"
