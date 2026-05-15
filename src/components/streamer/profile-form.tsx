@@ -20,7 +20,7 @@ import {
   sendTestTelegramToStreamerAction,
 } from '@/app/streamer/actions';
 
-const BOT_USERNAME = 'lead300426_bot';
+import { BOT_USERNAME } from '@/lib/bot';
 
 interface ProfileFormProps {
   initial: UpdateStreamerProfileInput;

@@ -13,6 +13,7 @@ import {
   buildManagerLeadNotificationHtml,
   buildBrokerLeadNotificationHtml,
 } from '@/lib/telegram';
+import { BOT_HANDLE } from '@/lib/bot';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -37,7 +38,7 @@ export async function sendTestTelegramToStreamerAction(): Promise<ActionResult> 
     return {
       ok: false,
       error:
-        'Сначала сохраните Telegram ID. После этого откройте @lead300426_bot и нажмите Start.',
+        `Сначала сохраните Telegram ID. После этого откройте ${BOT_HANDLE} и нажмите Start.`,
     };
   }
 
@@ -72,7 +73,7 @@ export async function sendTestTelegramToStreamerAction(): Promise<ActionResult> 
         return {
           ok: false,
           error:
-            'Бот не может вам написать. Откройте @lead300426_bot в Telegram и нажмите Start, затем повторите.',
+            `Бот не может вам написать. Откройте ${BOT_HANDLE} в Telegram и нажмите Start, затем повторите.`,
         };
       }
       return { ok: false, error: desc };

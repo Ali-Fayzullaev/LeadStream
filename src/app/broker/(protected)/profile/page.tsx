@@ -27,7 +27,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-const BOT_USERNAME = 'lead300426_bot';
+import { BOT_USERNAME } from '@/lib/bot';
 
 export default function BrokerProfilePage() {
   const [telegramId, setTelegramId] = useState('');

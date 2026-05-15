@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { BOT_HANDLE } from '@/lib/bot';
 
 export async function updateManagerTelegramAction(telegramChatId: string) {
   try {
@@ -50,7 +51,7 @@ export async function sendTestTelegramToManagerAction() {
       return {
         success: false as const,
         error:
-          'Сначала сохраните Telegram ID. После этого откройте @lead300426_bot и нажмите Start.',
+          `Сначала сохраните Telegram ID. После этого откройте ${BOT_HANDLE} и нажмите Start.`,
       };
     }
 
@@ -85,7 +86,7 @@ export async function sendTestTelegramToManagerAction() {
         return {
           success: false as const,
           error:
-            'Бот не может вам написать. Откройте @lead300426_bot в Telegram и нажмите Start, затем повторите.',
+            `Бот не может вам написать. Откройте ${BOT_HANDLE} в Telegram и нажмите Start, затем повторите.`,
         };
       }
       return { success: false as const, error: desc };

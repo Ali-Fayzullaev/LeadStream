@@ -23,7 +23,7 @@ interface Props {
   currentChatId: string;
 }
 
-const BOT_USERNAME = 'lead300426_bot';
+import { BOT_USERNAME } from '@/lib/bot';
 
 export function ManagerTelegramSection({ currentChatId }: Props) {
   const [chatId, setChatId] = useState(currentChatId);
