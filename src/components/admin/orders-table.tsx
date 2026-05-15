@@ -12,6 +12,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { adminUpdateOrderStatusAction, adminDeleteOrderAction, adminUpdateOrderCityAction } from '@/app/admin/actions';
 import { formatCurrency } from '@/lib/utils';
 import { OrderCommentsThread } from '@/components/order-comments-thread';
+import type { OrderCommentPreview } from '@/app/actions/order-comments';
 
 export interface OrderRow {
   id: string;
@@ -29,6 +30,8 @@ export interface OrderRow {
   city_name: string | null;
   is_assigned: boolean;
   comments_count?: number;
+  /** Most recent comment, shown inline so users don't need to open the dialog. */
+  last_comment?: OrderCommentPreview | null;
 }
 
 export interface City {
@@ -165,12 +168,20 @@ function OrderRowView({ row, statuses, cities }: { row: OrderRow; statuses: Stat
           current={current}
         />
       </td>
-      <td className="px-4 py-2 text-right">
-        <div className="inline-flex items-center gap-1">
-          <OrderCommentsThread orderId={row.id} iconOnly initialCount={row.comments_count ?? 0} />
-          <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
-            {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
-          </Button>
+      <td className="px-4 py-2 text-right align-top">
+        <div className="inline-flex flex-col items-end gap-1">
+          <div className="inline-flex items-center gap-1">
+            <OrderCommentsThread
+              orderId={row.id}
+              iconOnly
+              initialCount={row.comments_count ?? 0}
+              lastComment={row.last_comment ?? null}
+              previewLayout="block"
+            />
+            <Button size="icon" variant="ghost" onClick={() => setConfirmOpen(true)} disabled={pending} aria-label="Delete order">
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4 text-destructive" />}
+            </Button>
+          </div>
         </div>
         <ConfirmDialog
           open={confirmOpen}

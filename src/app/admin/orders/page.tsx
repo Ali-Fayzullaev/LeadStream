@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/page-header';
 import { OrdersTable, type OrderRow } from '@/components/admin/orders-table';
 import { AutoDistributeButton } from '@/components/admin/auto-distribute-button';
 import { getOrderStatuses } from '@/lib/statuses';
+import { getOrderCommentsSummary } from '@/app/actions/order-comments';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,27 +148,33 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     created_at: string;
   };
 
-  // Pre-fetch comment counts so each row's icon shows a badge immediately.
+  // Pre-fetch comment count + last-comment-preview so each row shows
+  // both a badge AND an inline message preview without needing the user
+  // to open the dialog. One round-trip for all rows on the page.
   const orderIds = (rawRows ?? []).map((r) => r.id as string);
-  const commentCountMap = await getCommentCounts(admin, orderIds);
+  const commentSummary = await getOrderCommentsSummary(orderIds);
 
-  const rows: OrderRow[] = ((rawRows ?? []) as unknown as Raw[]).map((r) => ({
-    id: r.id,
-    customer_name: r.customer_name,
-    customer_phone: r.customer_phone,
-    product_name: r.product_name,
-    quantity: r.quantity,
-    amount: Number(r.amount),
-    status: r.status,
-    streamer_name: r.streamer_id ? (streamerNameMap.get(r.streamer_id) ?? null) : null,
-    streamer_avatar: r.streamer_id ? (streamerAvatarMap.get(r.streamer_id) ?? null) : null,
-    ref_code_snapshot: r.ref_code_snapshot,
-    created_at: r.created_at,
-    city_id: r.city_id,
-    city_name: r.city_id ? (cityNameMap.get(r.city_id) ?? null) : null,
-    is_assigned: r.assigned_manager_id !== null,
-    comments_count: commentCountMap.get(r.id) ?? 0,
-  }));
+  const rows: OrderRow[] = ((rawRows ?? []) as unknown as Raw[]).map((r) => {
+    const summary = commentSummary.get(r.id);
+    return {
+      id: r.id,
+      customer_name: r.customer_name,
+      customer_phone: r.customer_phone,
+      product_name: r.product_name,
+      quantity: r.quantity,
+      amount: Number(r.amount),
+      status: r.status,
+      streamer_name: r.streamer_id ? (streamerNameMap.get(r.streamer_id) ?? null) : null,
+      streamer_avatar: r.streamer_id ? (streamerAvatarMap.get(r.streamer_id) ?? null) : null,
+      ref_code_snapshot: r.ref_code_snapshot,
+      created_at: r.created_at,
+      city_id: r.city_id,
+      city_name: r.city_id ? (cityNameMap.get(r.city_id) ?? null) : null,
+      is_assigned: r.assigned_manager_id !== null,
+      comments_count: summary?.count ?? 0,
+      last_comment: summary?.last ?? null,
+    };
+  });
 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -338,24 +345,8 @@ function buildUrl(sp: SP, page: number) {
   return `/admin/orders?${p}`;
 }
 
-/**
- * Returns Map<orderId, count> with the number of comments per order.
- * Uses a single grouped query — efficient for big lists.
- */
-async function getCommentCounts(
-  admin: ReturnType<typeof createAdminClient>,
-  orderIds: string[],
-): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
-  if (orderIds.length === 0) return map;
-  const { data, error } = await admin
-    .from('order_comments')
-    .select('order_id')
-    .in('order_id', orderIds);
-  if (error) return map;
-  for (const row of data ?? []) {
-    const id = row.order_id as string;
-    map.set(id, (map.get(id) ?? 0) + 1);
-  }
-  return map;
-}
+// Comment count + last-comment preview now come from a single helper —
+// `getOrderCommentsSummary` in `@/app/actions/order-comments`. We deleted
+// the page-local `getCommentCounts` to keep that logic in one place and
+// remove the awkward `Map<orderId, number>` shape that no longer matches
+// what the UI needs.

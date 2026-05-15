@@ -11,6 +11,7 @@ import { BrokerAssigner } from '@/components/manager/broker-assigner';
 import { OrderCommentsThread } from '@/components/order-comments-thread';
 import { getOrderStatuses } from '@/lib/statuses';
 import { formatCurrency } from '@/lib/utils';
+import { getOrderCommentsSummary } from '@/app/actions/order-comments';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,19 +83,11 @@ export default async function ManagerOrdersPage({
 
   const [{ data: orders }, statuses] = await Promise.all([q, getOrderStatuses()]);
 
-  // Pre-fetch comment counts so the icon shows a badge straight away.
+  // Pre-fetch comment count + last-comment preview in one round trip so
+  // the manager can read the latest message right in the table without
+  // opening the dialog.
   const orderIds = (orders ?? []).map((o) => o.id as string);
-  const commentCountMap = new Map<string, number>();
-  if (orderIds.length > 0) {
-    const { data: cc } = await admin
-      .from('order_comments')
-      .select('order_id')
-      .in('order_id', orderIds);
-    for (const row of cc ?? []) {
-      const id = row.order_id as string;
-      commentCountMap.set(id, (commentCountMap.get(id) ?? 0) + 1);
-    }
-  }
+  const commentSummary = await getOrderCommentsSummary(orderIds);
 
   const brokerNameMap = new Map(
     (brokers ?? []).map((b) => [b.id as string, b.display_name as string]),
@@ -283,11 +276,13 @@ export default async function ManagerOrdersPage({
                             minute: '2-digit',
                           })}
                         </td>
-                        <td className="px-2 py-2 text-right">
+                        <td className="px-2 py-2 text-right align-top">
                           <OrderCommentsThread
                             orderId={o.id}
                             iconOnly
-                            initialCount={commentCountMap.get(o.id) ?? 0}
+                            initialCount={commentSummary.get(o.id)?.count ?? 0}
+                            lastComment={commentSummary.get(o.id)?.last ?? null}
+                            previewLayout="block"
                           />
                         </td>
                       </tr>

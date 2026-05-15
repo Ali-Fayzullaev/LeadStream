@@ -26,6 +26,7 @@ import {
   updateOrderCommentAction,
   deleteOrderCommentAction,
   type OrderCommentDTO,
+  type OrderCommentPreview,
 } from '@/app/actions/order-comments';
 
 interface Props {
@@ -34,6 +35,19 @@ interface Props {
   initialCount?: number;
   /** Compact icon-only trigger? Defaults to false → shows count. */
   iconOnly?: boolean;
+  /**
+   * Optional preview of the most recent comment, rendered inline below /
+   * beside the trigger button so admin / manager / broker can see what was
+   * said without opening the dialog. Server-rendered for free with
+   * `getOrderCommentsSummary()`.
+   */
+  lastComment?: OrderCommentPreview | null;
+  /**
+   * Layout for the inline preview. `inline` (default) → preview sits to
+   * the right of the icon on one line (best in narrow table cells).
+   * `block` → preview wraps below the icon (best in wider cells / cards).
+   */
+  previewLayout?: 'inline' | 'block';
 }
 
 const MAX_BODY = 2000;
@@ -51,7 +65,33 @@ function formatDate(iso: string): string {
   } catch { return iso; }
 }
 
-export function OrderCommentsThread({ orderId, initialCount = 0, iconOnly = false }: Props) {
+/**
+ * Tiny coloured dot indicating the role of the most-recent comment author.
+ * We deliberately keep this lighter than the full role badge used inside the
+ * dialog — table cells get crowded fast.
+ */
+function PreviewRoleDot({ role }: { role: OrderCommentDTO['author_role'] }) {
+  const cls =
+    role === 'admin'
+      ? 'bg-violet-500'
+      : role === 'manager'
+        ? 'bg-sky-500'
+        : 'bg-emerald-500';
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block size-2 rounded-full ${cls} shrink-0`}
+    />
+  );
+}
+
+export function OrderCommentsThread({
+  orderId,
+  initialCount = 0,
+  iconOnly = false,
+  lastComment = null,
+  previewLayout = 'inline',
+}: Props) {
   const [open, setOpen] = useState(false);
   const [comments, setComments] = useState<OrderCommentDTO[]>([]);
   const [count, setCount] = useState<number>(initialCount);
@@ -164,40 +204,93 @@ export function OrderCommentsThread({ orderId, initialCount = 0, iconOnly = fals
     ? `Комментарии (${count})`
     : 'Добавить комментарий';
 
+  // Build the trigger button once — it's rendered standalone OR wrapped
+  // inside a layout container with the inline preview, depending on whether
+  // the caller passed `lastComment`.
+  const triggerButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-label={ariaLabel}
+      title={ariaLabel}
+      className={`relative gap-1.5 h-8 ${iconOnly ? 'px-2' : 'px-2.5'} transition-colors ${
+        hasComments
+          ? 'text-sky-700 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20'
+          : 'text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      <MessageSquare className={`size-4 ${hasComments ? 'fill-sky-500/20' : ''}`} />
+      {!iconOnly && (
+        hasComments ? (
+          <span className="font-medium text-xs">{count}</span>
+        ) : (
+          <span className="text-xs">Комментарий</span>
+        )
+      )}
+      {/* Notification badge — visible in icon-only mode */}
+      {iconOnly && hasComments && (
+        <span
+          className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold leading-4 text-center shadow-sm ring-2 ring-background"
+          aria-hidden="true"
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </Button>
+  );
+
+  // Inline preview of the most recent comment. Clicking it opens the same
+  // dialog as the icon, so it doubles as both a "read at a glance" hint
+  // AND a larger click target.
+  const preview = lastComment ? (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      aria-label="Открыть комментарии"
+      className={`group max-w-[260px] text-left rounded-md border bg-muted/40 hover:bg-muted hover:border-sky-500/40 transition-colors px-2 py-1 ${
+        previewLayout === 'block' ? 'mt-1' : ''
+      }`}
+    >
+      <div className="flex items-center gap-1.5">
+        <PreviewRoleDot role={lastComment.author_role} />
+        <span className="text-[11px] font-medium text-foreground truncate">
+          {lastComment.author_name ?? ROLE_META[lastComment.author_role].label}
+        </span>
+        <span className="ml-auto text-[10px] text-muted-foreground whitespace-nowrap">
+          {formatDate(lastComment.created_at)}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground line-clamp-1 group-hover:text-foreground transition-colors">
+        {lastComment.body}
+      </p>
+    </button>
+  ) : null;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={ariaLabel}
-          title={ariaLabel}
-          className={`relative gap-1.5 h-8 ${iconOnly ? 'px-2' : 'px-2.5'} transition-colors ${
-            hasComments
-              ? 'text-sky-700 dark:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20'
-              : 'text-muted-foreground hover:text-foreground'
+      {/*
+        When there is an inline preview we render the icon + preview side
+        by side. We can't wrap both in a single <DialogTrigger asChild>
+        because Radix's `asChild` slot expects exactly one focusable child
+        and our preview is itself a <button>, which would yield invalid
+        "button inside button" markup. Instead we trigger `setOpen(true)`
+        manually on both children.
+      */}
+      {preview ? (
+        <div
+          className={`inline-flex ${
+            previewLayout === 'block' ? 'flex-col items-end gap-1' : 'items-center gap-2'
           }`}
         >
-          <MessageSquare className={`size-4 ${hasComments ? 'fill-sky-500/20' : ''}`} />
-          {!iconOnly && (
-            hasComments ? (
-              <span className="font-medium text-xs">{count}</span>
-            ) : (
-              <span className="text-xs">Комментарий</span>
-            )
-          )}
-          {/* Notification badge — visible in icon-only mode */}
-          {iconOnly && hasComments && (
-            <span
-              className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold leading-4 text-center shadow-sm ring-2 ring-background"
-              aria-hidden="true"
-            >
-              {count > 99 ? '99+' : count}
-            </span>
-          )}
-        </Button>
-      </DialogTrigger>
+          <span onClick={() => setOpen(true)} className="contents">
+            {triggerButton}
+          </span>
+          {preview}
+        </div>
+      ) : (
+        <DialogTrigger asChild>{triggerButton}</DialogTrigger>
+      )}
 
       <DialogContent className="max-w-lg">
         <DialogHeader>

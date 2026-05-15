@@ -35,66 +35,67 @@ const MAX_BODY = 2000;
 /**
  * Resolves the calling user and their role.
  * Throws when the user is not authenticated.
+ *
+ * Why so defensive?
+ *   - `supabase.auth.getUser()` can throw on stale/invalid refresh tokens.
+ *     We swallow that and return `null`, otherwise the server action would
+ *     bubble up an uncaught exception → in Next 14 server actions that
+ *     manifests on the client as `undefined` (no `success` field), and on
+ *     production behind Nginx as a 502.
+ *   - Profile / manager / broker lookups are issued in PARALLEL — three
+ *     small head-style queries against indexed columns. This is the hot
+ *     path that runs on every dialog open AND on every keystroke; halving
+ *     latency makes the comments thread feel snappy.
+ *   - We DO NOT throw on "no role found" — we throw a clearly-typed error
+ *     that callers turn into a user-facing toast. Throwing strings was
+ *     causing "Не удалось загрузить комментарии" with no detail.
  */
 async function getCaller(): Promise<CallerCtx> {
   const supabase = createClient();
-  // getUser() may throw on stale/invalid refresh tokens. Catch defensively
-  // so the action returns a clean { success:false } instead of a server crash
-  // (which would surface as a 502 in dev / Cannot read 'success' on the client).
   let user: { id: string; email?: string | null } | null = null;
   try {
     const { data } = await supabase.auth.getUser();
     user = data?.user ?? null;
-  } catch {
+  } catch (err) {
+    // Stale refresh-token, missing cookies, JWKS hiccup, etc.
+    console.warn('[order-comments] auth.getUser() failed:', err);
     user = null;
   }
-  if (!user) throw new Error('Не авторизован');
+  if (!user) throw new Error('Не авторизован — войдите заново');
 
   const admin = createAdminClient();
 
-  // 1. Admin via profiles.role
-  const { data: profile } = await admin
-    .from('profiles')
-    .select('role, full_name')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (profile?.role === 'admin') {
+  const [profileRes, managerRes, brokerRes] = await Promise.all([
+    admin.from('profiles').select('role, full_name').eq('id', user.id).maybeSingle(),
+    admin.from('managers').select('id, display_name, status').eq('user_id', user.id).maybeSingle(),
+    admin.from('brokers').select('id, display_name, status').eq('user_id', user.id).maybeSingle(),
+  ]);
+
+  if (profileRes.data?.role === 'admin') {
     return {
       userId: user.id,
       role: 'admin',
-      displayName: profile.full_name ?? user.email ?? null,
+      displayName: profileRes.data.full_name ?? user.email ?? null,
     };
   }
 
-  // 2. Manager
-  const { data: manager } = await admin
-    .from('managers')
-    .select('id, display_name, status')
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (manager) {
-    if (manager.status === 'blocked') throw new Error('Ваш аккаунт заблокирован');
+  if (managerRes.data) {
+    if (managerRes.data.status === 'blocked') throw new Error('Ваш аккаунт заблокирован');
     return {
       userId: user.id,
       role: 'manager',
-      displayName: manager.display_name,
-      managerId: manager.id,
+      displayName: managerRes.data.display_name,
+      managerId: managerRes.data.id,
     };
   }
 
-  // 3. Broker
-  const { data: broker } = await admin
-    .from('brokers')
-    .select('id, display_name, status')
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (broker) {
-    if (broker.status === 'blocked') throw new Error('Ваш аккаунт заблокирован');
+  if (brokerRes.data) {
+    if (brokerRes.data.status === 'blocked') throw new Error('Ваш аккаунт заблокирован');
     return {
       userId: user.id,
       role: 'broker',
-      displayName: broker.display_name,
-      brokerId: broker.id,
+      displayName: brokerRes.data.display_name,
+      brokerId: brokerRes.data.id,
     };
   }
 
@@ -172,8 +173,94 @@ export async function listOrderCommentsAction(
     }));
     return { success: true, comments };
   } catch (err) {
+    console.error('[order-comments] listOrderCommentsAction failed:', err);
     return { success: false, error: err instanceof Error ? err.message : 'Не удалось загрузить комментарии' };
   }
+}
+
+// ===========================================================================
+// SERVER-SIDE HELPERS (used by page server components, not by the client)
+// ===========================================================================
+
+/**
+ * Lightweight DTO for the inline "last comment" preview rendered next to
+ * each order row. Intentionally a subset of OrderCommentDTO — there is no
+ * `is_mine` because previews are shown to everybody who can see the order,
+ * and we don't want to pay the cost of resolving the viewer's identity for
+ * every list page render.
+ */
+export interface OrderCommentPreview {
+  id: string;
+  order_id: string;
+  author_role: OrderCommentRole;
+  author_name: string | null;
+  body: string;
+  created_at: string;
+  edited: boolean;
+}
+
+/**
+ * Returns a `Map<orderId, {count, last}>` for the supplied order ids.
+ *
+ * Why one helper for both count + last?
+ *   - Every order-list page needs BOTH numbers (badge with count + inline
+ *     preview of the most recent message). Doing two round-trips would
+ *     double the DB latency for what is essentially the same data.
+ *   - We fetch ALL comments for the given orders ordered by `created_at desc`,
+ *     then fold them in JS. With our existing
+ *     `idx_order_comments_order_id (order_id, created_at)` index this is an
+ *     index-only scan and remains O(rows-on-page).
+ *   - For pages with hundreds of orders this is still cheap because the
+ *     index is sorted; if comment volume grows we can switch to a Postgres
+ *     `distinct on (order_id) ...` query without changing this API.
+ *
+ * Authorisation is intentionally NOT enforced here: this runs only inside
+ * server components on pages that are already guarded by role-aware data
+ * fetching (admin sees all orders, manager only sees their own etc.). The
+ * helper just returns metadata for order ids the caller has already proved
+ * it can see.
+ */
+export async function getOrderCommentsSummary(
+  orderIds: string[],
+): Promise<Map<string, { count: number; last: OrderCommentPreview | null }>> {
+  const map = new Map<string, { count: number; last: OrderCommentPreview | null }>();
+  if (orderIds.length === 0) return map;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('order_comments')
+    .select('id, order_id, author_role, author_name, body, created_at, edited')
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[order-comments] getOrderCommentsSummary failed:', error);
+    return map;
+  }
+
+  for (const row of data ?? []) {
+    const id = row.order_id as string;
+    const existing = map.get(id);
+    if (existing) {
+      existing.count += 1;
+      // First row per order_id IS the latest (we sorted desc above), so we
+      // never need to overwrite `last` once it's set.
+    } else {
+      map.set(id, {
+        count: 1,
+        last: {
+          id: row.id as string,
+          order_id: id,
+          author_role: row.author_role as OrderCommentRole,
+          author_name: (row.author_name as string | null) ?? null,
+          body: row.body as string,
+          created_at: row.created_at as string,
+          edited: !!row.edited,
+        },
+      });
+    }
+  }
+  return map;
 }
 
 export async function createOrderCommentAction(
